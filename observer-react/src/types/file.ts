@@ -1,6 +1,6 @@
 // 与 Rust 侧 commands.rs / formats.rs 返回结构对应的类型,以及前端通用的文件引用。
 
-export type FileKind = "image" | "video" | "audio" | "text" | "markdown" | "unknown";
+export type FileKind = "image" | "video" | "audio" | "text" | "markdown" | "spreadsheet" | "pdf" | "unknown";
 
 /** list_dir 返回的目录项 */
 export interface DirEntry {
@@ -38,4 +38,21 @@ export interface FileRef {
   name: string;
   ext: string;
   kind: FileKind;
+  /** 魔数嗅探出的实际格式(仅歧义后缀时给出;识别 Lottie 用,"lottie") */
+  sniffed?: string | null;
+}
+
+/** ffprobe_meta 返回(视频/音频元信息,M1) */
+export interface VideoMeta {
+  duration: number | null;
+  bit_rate: number | null;
+  format_name: string | null;
+  video_codec: string | null;
+  width: number | null;
+  height: number | null;
+  frame_rate: number | null;
+  hdr: boolean;
+  audio_codec: string | null;
+  sample_rate: number | null;
+  channels: number | null;
 }

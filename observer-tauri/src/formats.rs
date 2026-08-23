@@ -23,6 +23,12 @@ pub fn kind_for_ext(ext: &str) -> &'static str {
 
         "md" | "markdown" | "mdown" | "mkd" => "markdown",
 
+        // 电子表格(第二批:xlsx 支持,SheetJS 解析)
+        "xlsx" | "xls" | "xlsm" | "ods" => "spreadsheet",
+
+        // PDF(第三批:pdf.js 渲染)
+        "pdf" => "pdf",
+
         "txt" | "json" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "rs" | "py" | "css"
         | "scss" | "less" | "html" | "htm" | "xml" | "yml" | "yaml" | "toml" | "ini" | "conf"
         | "cfg" | "log" | "csv" | "tsv" | "c" | "h" | "cpp" | "cc" | "hpp" | "cs" | "java"
@@ -39,14 +45,17 @@ pub fn kind_for_sniff(sniff: &str, fallback: &str) -> &'static str {
         "mp4" | "webm" | "mov" | "mpegts" => "video",
         "wav" | "mp3" | "ogg" | "flac" | "aiff" => "audio",
         "png" | "jpeg" | "gif" | "webp" | "bmp" | "avif" => "image",
-        // Lottie 是 JSON,本轮仍按文本预览(PDF/3D 等后续)
+        // Lottie 是 JSON,本轮仍按文本预览(3D 等后续)
         "lottie" | "json" | "text" => "text",
-        "pdf" => "unknown",
+        // PDF(第三批:pdf.js 渲染)
+        "pdf" => "pdf",
         _ => match fallback {
             "image" => "image",
             "video" => "video",
             "audio" => "audio",
             "markdown" => "markdown",
+            "spreadsheet" => "spreadsheet",
+            "pdf" => "pdf",
             "text" => "text",
             _ => "unknown",
         },

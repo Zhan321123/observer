@@ -90,7 +90,9 @@ pub fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     Ok(dirs)
 }
 
-const MAX_TEXT_BYTES: u64 = 5 * 1024 * 1024; // 5 MiB 护栏
+// 1 GiB 灾难性护栏:真正的"大小阈值 + 确认后显示"在前端(设置项 textMaxSizeMB,默认 10MB),
+// 后端只防一次读入撑爆 WebView。超过此值仍拒绝。
+const MAX_TEXT_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// 读文本文件(UTF-8,有损容错)。仅元数据级文本,媒体字节绝不走这里(铁律 2)。
 #[tauri::command]
@@ -101,6 +103,59 @@ pub fn read_text_file(path: String) -> Result<String, String> {
     }
     let bytes = fs::read(&path).map_err(|e| format!("无法读取文件: {e}"))?;
     Ok(String::from_utf8_lossy(&bytes).to_string())
+}
+
+/// 解析 Markdown 链接为本地文件绝对路径(供"本地链接→新宫格打开")。
+/// 外链(http/https/mailto 等)返回 None,由前端走浏览器。相对路径基于 base_file 所在目录。
+/// 仅当解析后的目标确实存在且为文件时返回其规范化绝对路径,否则 None。
+#[tauri::command]
+pub fn resolve_link(base_file: String, href: String) -> Option<String> {
+    // 去掉查询/锚点;percent 解码;剥 file:// 前缀
+    let mut h = href.split(['#', '?']).next().unwrap_or("").trim().to_string();
+    if let Some(rest) = h.strip_prefix("file://") {
+        h = rest.trim_start_matches('/').to_string();
+    }
+    if h.is_empty() {
+        return None;
+    }
+    // 带 scheme 的(http:// https:// mailto: 等)→ 非本地文件,交前端走浏览器
+    if h.contains("://") || h.starts_with("mailto:") {
+        return None;
+    }
+    let decoded = percent_decode(&h);
+    let p = Path::new(&decoded);
+    let candidate = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        Path::new(&base_file).parent()?.join(p)
+    };
+    let canon = candidate.canonicalize().ok()?;
+    if canon.is_file() {
+        Some(canon.to_string_lossy().to_string())
+    } else {
+        None
+    }
+}
+
+/// 最小 percent 解码(处理 %20 等)。非法序列原样保留。
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                if let Ok(v) = u8::from_str_radix(hex, 16) {
+                    out.push(v);
+                    i += 3;
+                    continue;
+                }
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
 }
 
 /// 文件元数据(文件信息 frame)。
@@ -146,6 +201,19 @@ pub fn detect_format(path: String) -> Result<DetectResult, String> {
         kind = formats::kind_for_sniff(s, &kind).to_string();
     }
 
+    // mp4 家族容器可能是纯音频(B站 audio.m4s / .m4a 等):按容器嗅探只能得到 "video",
+    // 需 ffprobe 看流——无视频流但有音频流 → 归为 audio,走原生音频预览(asset:// 直放 AAC-in-MP4,
+    // 比 ffmpeg fMP4 流在 <video> 里播纯音频可靠得多)。probe 失败则维持原判,优雅回退。
+    let mp4_family = sniffed.as_deref() == Some("mp4")
+        || matches!(ext.as_str(), "mp4" | "m4v" | "m4s" | "mov" | "3gp" | "m4a");
+    if kind == "video" && mp4_family {
+        if let Ok(meta) = crate::ffmpeg::probe(&path) {
+            if meta.video_codec.is_none() && meta.audio_codec.is_some() {
+                kind = "audio".to_string();
+            }
+        }
+    }
+
     Ok(DetectResult { ext, sniffed, kind })
 }
 
@@ -160,4 +228,41 @@ pub fn allow_asset_path(app: tauri::AppHandle, path: String) -> Result<(), Strin
         scope.allow_file(p)
     };
     r.map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+
+    fn gen(args: &[&str], out: &std::path::Path) {
+        let status = Command::new(crate::ffmpeg::ffmpeg_path().expect("ffmpeg"))
+            .args(["-hide_banner", "-loglevel", "error", "-y"])
+            .args(args)
+            .arg(out)
+            .status()
+            .expect("spawn ffmpeg");
+        assert!(status.success(), "生成测试文件失败: {}", out.display());
+    }
+
+    /// 纯音频 m4s(B站 audio.m4s = AAC-in-MP4)应判为 audio;含视频流的 m4s 仍为 video。
+    #[test]
+    fn detect_format_distinguishes_audio_only_m4s() {
+        let dir = std::env::temp_dir();
+        let audio = dir.join("observer_detect_audio.m4s");
+        let video = dir.join("observer_detect_video.m4s");
+        gen(
+            &["-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:a", "aac", "-movflags", "frag_keyframe", "-f", "mp4"],
+            &audio,
+        );
+        gen(
+            &["-f", "lavfi", "-i", "testsrc=duration=2:size=160x120:rate=25", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "frag_keyframe", "-f", "mp4"],
+            &video,
+        );
+
+        let da = detect_format(audio.to_string_lossy().to_string()).expect("detect audio");
+        assert_eq!(da.kind, "audio", "纯音频 m4s 应判为 audio,实际 {}", da.kind);
+        let dv = detect_format(video.to_string_lossy().to_string()).expect("detect video");
+        assert_eq!(dv.kind, "video", "含视频流 m4s 应判为 video,实际 {}", dv.kind);
+    }
 }

@@ -11,7 +11,7 @@ export async function fileRefFromPath(path: string): Promise<FileRef> {
   const d = await detectFormat(path).catch(() => null);
   const name = baseName(path);
   const ext = (d?.ext ?? name.split(".").pop() ?? "").toLowerCase();
-  return { path, name, ext, kind: d?.kind ?? "unknown" };
+  return { path, name, ext, kind: d?.kind ?? "unknown", sniffed: d?.sniffed ?? null };
 }
 
 interface DragDropPayload {

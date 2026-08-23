@@ -1,8 +1,9 @@
 import type { FormatHandler } from "../types";
 import { VideoView } from "../../components/preview/VideoView";
-import { PlaceholderView } from "../../components/preview/PlaceholderView";
+import { StreamVideoView } from "../../components/preview/StreamVideoView";
 
-// WebView2 原生可播:H.264/AAC 的 mp4、vp8/9 的 webm。HEVC 需付费商店扩展,故 mkv/hevc 等一律走 ffmpeg 占位(M1)。
+// WebView2 原生可播:H.264/AAC 的 mp4、vp8/9 的 webm → asset:// 直放(M0)。
+// 其余容器/编码(mkv/ts/mov/wmv/flv/avi/hevc/m4s…)→ M1 FFmpeg 流(remux 优先,否则转码)。
 const NATIVE = ["mp4", "webm", "m4v", "ogv"];
 
 export const videoHandler: FormatHandler = {
@@ -19,7 +20,7 @@ export const videoHandler: FormatHandler = {
       : {
           kind: "video",
           strategy: "ffmpeg-stream",
-          component: PlaceholderView,
-          reason: "该容器/编码需 FFmpeg remux 或转码(后续里程碑 M1)",
+          component: StreamVideoView,
+          reason: "FFmpeg 流式预览(remux/转码)",
         },
 };

@@ -1,6 +1,7 @@
 import {
   Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, ChevronLeft, ChevronRight,
   Maximize, Expand, ZoomIn, ZoomOut, FolderOpen, Copy, Ratio, Scan,
+  ListOrdered, WrapText, ClipboardCopy, Eye, FileCode, Film, LayoutGrid, Table,
 } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
 import { useCellViewStore } from "../stores/cellViewStore";
@@ -44,11 +45,23 @@ export function FunctionBar() {
 
   const file = cell?.file ?? null;
   const kind = file?.kind;
-  const ctl = selected != null ? getControl(selected) : undefined;
+  // 事件时取控制:cellControls 是普通 Map(非响应式),渲染期快照会拿到过期的死闭包
+  // (xlsx 异步解析完成后重注册,快照仍指向 wb=null 的旧控制 → 切 sheet 无反应)。
+  const ctl = () => getControl(selected);
 
   const isMedia = kind === "video" || kind === "audio";
   const isImage = kind === "image";
   const isText = kind === "text" || kind === "markdown";
+  const isSpreadsheet = kind === "spreadsheet";
+  const isPdf = kind === "pdf";
+  const isGif = file?.ext === "gif";
+  const isIco = file?.ext === "ico";
+  const isSvg = file?.ext === "svg";
+  const isCsv = file?.ext === "csv" || file?.ext === "tsv";
+  const isLottie = file?.sniffed === "lottie";
+  // 可含透明层的图片(显示"透明网格"开关);gif/ico 也支持
+  const alphaImage =
+    isImage && ["png", "webp", "gif", "avif", "svg", "ico", "tiff", "tif", "tga"].includes(file?.ext ?? "");
 
   const playing = view?.playing ?? false;
   const currentTime = view?.currentTime ?? 0;
@@ -64,16 +77,51 @@ export function FunctionBar() {
         <span className="px-2 text-xs text-text-dim">未选择文件</span>
       ) : (
         <>
-          {/* 图片组 */}
-          {isImage && (
+          {/* 图片组(gif / ico 走专用控件,普通图片走缩放/适配) */}
+          {isImage && isGif && (
             <>
-              <BarButton title="最佳显示(适应宫格)" active={fitMode === "best-fit"} onClick={() => ctl?.setFitMode?.("best-fit")}>
+              <BarButton
+                title={view?.gifPlaying ? "暂停" : "播放"}
+                onClick={() => ctl()?.gifTogglePlay?.()}
+              >
+                {view?.gifPlaying ? <Pause size={16} /> : <Play size={16} />}
+              </BarButton>
+              <BarButton title="上一帧" onClick={() => ctl()?.gifStep?.(-1)}>
+                <ChevronLeft size={16} />
+              </BarButton>
+              <BarButton title="下一帧" onClick={() => ctl()?.gifStep?.(1)}>
+                <ChevronRight size={16} />
+              </BarButton>
+              <span className="shrink-0 text-[11px] tabular-nums text-text-dim">
+                {String((view?.gifFrame ?? 0) + 1).padStart(String(view?.gifFrameCount ?? 0).length, "0")} / {view?.gifFrameCount ?? 0} 帧
+              </span>
+            </>
+          )}
+          {isImage && isIco && (
+            <>
+              <select
+                className="rounded bg-panel-2 px-1 text-[11px] text-text outline-none"
+                value={view?.icoIndex ?? 0}
+                onChange={(e) => ctl()?.setIcoSize?.(Number(e.target.value))}
+                title="选择内嵌尺寸"
+              >
+                {(view?.icoSizes ?? []).map((s, i) => (
+                  <option key={i} value={i}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+          {isImage && !isGif && !isIco && (
+            <>
+              <BarButton title="最佳显示(适应宫格)" active={fitMode === "best-fit"} onClick={() => ctl()?.setFitMode?.("best-fit")}>
                 <Ratio size={16} />
               </BarButton>
-              <BarButton title="1:1(实际像素)" active={fitMode === "actual"} onClick={() => ctl?.setFitMode?.("actual")}>
+              <BarButton title="1:1(实际像素)" active={fitMode === "actual"} onClick={() => ctl()?.setFitMode?.("actual")}>
                 <Scan size={16} />
               </BarButton>
-              <BarButton title="缩小" onClick={() => ctl?.zoomOut?.()}>
+              <BarButton title="缩小" onClick={() => ctl()?.zoomOut?.()}>
                 <ZoomOut size={16} />
               </BarButton>
               <input
@@ -83,34 +131,54 @@ export function FunctionBar() {
                 max={8}
                 step={0.01}
                 value={Math.min(scale, 8)}
-                onChange={(e) => ctl?.setZoom?.(Number(e.target.value))}
+                onChange={(e) => ctl()?.setZoom?.(Number(e.target.value))}
                 title={`缩放 ${Math.round(scale * 100)}%`}
               />
-              <BarButton title="放大" onClick={() => ctl?.zoomIn?.()}>
+              <BarButton title="放大" onClick={() => ctl()?.zoomIn?.()}>
                 <ZoomIn size={16} />
               </BarButton>
               <span className="w-10 text-[11px] tabular-nums text-text-dim">{Math.round(scale * 100)}%</span>
             </>
           )}
+          {/* svg:预览 / 文本源码 */}
+          {isImage && isSvg && (
+            <BarButton
+              title={view?.svgMode === "text" ? "切换到预览" : "切换到源码"}
+              active={view?.svgMode !== "text"}
+              onClick={() => ctl()?.toggleSvgMode?.()}
+            >
+              {view?.svgMode === "text" ? <Eye size={16} /> : <FileCode size={16} />}
+            </BarButton>
+          )}
+          {/* 透明图层 → 棋盘格底开关 */}
+          {alphaImage && (
+            <BarButton
+              title="透明网格(棋盘格底)"
+              active={view?.transparencyGrid ?? false}
+              onClick={() => ctl()?.toggleTransparencyGrid?.()}
+            >
+              <LayoutGrid size={16} />
+            </BarButton>
+          )}
 
           {/* 媒体组(视频/音频) */}
           {isMedia && (
             <>
-              <BarButton title={playing ? "暂停" : "播放"} onClick={() => ctl?.toggle?.()}>
+              <BarButton title={playing ? "暂停" : "播放"} onClick={() => ctl()?.toggle?.()}>
                 {playing ? <Pause size={16} /> : <Play size={16} />}
               </BarButton>
-              <BarButton title="快退 5s" onClick={() => ctl?.seek?.(currentTime - 5)}>
+              <BarButton title="快退 5s" onClick={() => ctl()?.seek?.(currentTime - 5)}>
                 <SkipBack size={16} />
               </BarButton>
-              <BarButton title="快进 5s" onClick={() => ctl?.seek?.(currentTime + 5)}>
+              <BarButton title="快进 5s" onClick={() => ctl()?.seek?.(currentTime + 5)}>
                 <SkipForward size={16} />
               </BarButton>
               {kind === "video" && (
                 <>
-                  <BarButton title="上一帧" onClick={() => ctl?.stepFrame?.(-1)}>
+                  <BarButton title="上一帧" onClick={() => ctl()?.stepFrame?.(-1)}>
                     <ChevronLeft size={16} />
                   </BarButton>
-                  <BarButton title="下一帧" onClick={() => ctl?.stepFrame?.(1)}>
+                  <BarButton title="下一帧" onClick={() => ctl()?.stepFrame?.(1)}>
                     <ChevronRight size={16} />
                   </BarButton>
                 </>
@@ -122,13 +190,13 @@ export function FunctionBar() {
                 max={duration || 0}
                 step={0.01}
                 value={currentTime}
-                onChange={(e) => ctl?.seek?.(Number(e.target.value))}
+                onChange={(e) => ctl()?.seek?.(Number(e.target.value))}
                 title="播放进度"
               />
               <span className="shrink-0 text-[11px] tabular-nums text-text-dim">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
-              <BarButton title={volume === 0 ? "取消静音" : "静音"} onClick={() => ctl?.setVolume?.(volume === 0 ? 1 : 0)}>
+              <BarButton title={volume === 0 ? "取消静音" : "静音"} onClick={() => ctl()?.setVolume?.(volume === 0 ? 1 : 0)}>
                 {volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </BarButton>
               <input
@@ -138,13 +206,13 @@ export function FunctionBar() {
                 max={1}
                 step={0.01}
                 value={volume}
-                onChange={(e) => ctl?.setVolume?.(Number(e.target.value))}
+                onChange={(e) => ctl()?.setVolume?.(Number(e.target.value))}
                 title="音量"
               />
               <select
                 className="rounded bg-panel-2 px-1 text-[11px] text-text outline-none"
                 value={rate}
-                onChange={(e) => ctl?.setRate?.(Number(e.target.value))}
+                onChange={(e) => ctl()?.setRate?.(Number(e.target.value))}
                 title="播放速度"
               >
                 {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2].map((r) => (
@@ -154,10 +222,10 @@ export function FunctionBar() {
               {kind === "video" && (
                 <>
                   <Sep />
-                  <BarButton title="最佳显示" active={fitMode === "best-fit"} onClick={() => ctl?.setFitMode?.("best-fit")}>
+                  <BarButton title="最佳显示" active={fitMode === "best-fit"} onClick={() => ctl()?.setFitMode?.("best-fit")}>
                     <Ratio size={16} />
                   </BarButton>
-                  <BarButton title="1:1" active={fitMode === "actual"} onClick={() => ctl?.setFitMode?.("actual")}>
+                  <BarButton title="1:1" active={fitMode === "actual"} onClick={() => ctl()?.setFitMode?.("actual")}>
                     <Scan size={16} />
                   </BarButton>
                 </>
@@ -168,24 +236,116 @@ export function FunctionBar() {
           {/* 文本组 */}
           {isText && (
             <>
-              <BarButton title="缩小字号" onClick={() => ctl?.zoomText?.(-1)}>
+              {/* markdown:预览 / 文本 */}
+              {kind === "markdown" && (
+                <BarButton
+                  title={view?.mdMode === "text" ? "切换到预览" : "切换到源码"}
+                  active={view?.mdMode !== "text"}
+                  onClick={() => ctl()?.toggleMarkdownMode?.()}
+                >
+                  {view?.mdMode === "text" ? <Eye size={16} /> : <FileCode size={16} />}
+                </BarButton>
+              )}
+              {/* lottie(.json):动画 / 文本 */}
+              {isLottie && (
+                <BarButton
+                  title={view?.lottieMode === "text" ? "切换到动画" : "切换到文本"}
+                  active={view?.lottieMode !== "text"}
+                  onClick={() => ctl()?.toggleLottieMode?.()}
+                >
+                  {view?.lottieMode === "text" ? <Film size={16} /> : <FileCode size={16} />}
+                </BarButton>
+              )}
+              {/* csv/tsv:表格 / 文本源码 */}
+              {isCsv && (
+                <BarButton
+                  title={view?.csvMode === "text" ? "切换到表格" : "切换到源码"}
+                  active={view?.csvMode !== "text"}
+                  onClick={() => ctl()?.toggleCsvMode?.()}
+                >
+                  {view?.csvMode === "text" ? <Table size={16} /> : <FileCode size={16} />}
+                </BarButton>
+              )}
+              <BarButton title="缩小字号" onClick={() => ctl()?.zoomText?.(-1)}>
                 <ZoomOut size={16} />
               </BarButton>
               <span className="w-8 text-center text-[11px] tabular-nums text-text-dim">{view?.fontSize ?? 13}</span>
-              <BarButton title="放大字号" onClick={() => ctl?.zoomText?.(1)}>
+              <BarButton title="放大字号" onClick={() => ctl()?.zoomText?.(1)}>
+                <ZoomIn size={16} />
+              </BarButton>
+              {kind === "text" && (
+                <>
+                  <BarButton
+                    title="行号"
+                    active={view?.lineNumbers ?? false}
+                    onClick={() => ctl()?.toggleLineNumbers?.()}
+                  >
+                    <ListOrdered size={16} />
+                  </BarButton>
+                  <BarButton
+                    title="自动换行"
+                    active={view?.wordWrap ?? false}
+                    onClick={() => ctl()?.toggleWordWrap?.()}
+                  >
+                    <WrapText size={16} />
+                  </BarButton>
+                </>
+              )}
+              <BarButton title="复制全文" onClick={() => ctl()?.copyAll?.()}>
+                <ClipboardCopy size={16} />
+              </BarButton>
+            </>
+          )}
+
+          {/* 表格组(xlsx):sheet 下拉 */}
+          {isSpreadsheet && (
+            <>
+              <span className="shrink-0 text-[11px] text-text-dim">工作表</span>
+              <select
+                className="max-w-40 rounded bg-panel-2 px-1 text-[11px] text-text outline-none"
+                value={view?.sheetIndex ?? 0}
+                onChange={(e) => ctl()?.setSheet?.(Number(e.target.value))}
+                title="选择工作表"
+              >
+                {(view?.sheetNames ?? []).map((s, i) => (
+                  <option key={i} value={i}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+
+          {/* PDF 组:翻页 + 缩放 */}
+          {isPdf && (
+            <>
+              <BarButton title="上一页" onClick={() => ctl()?.pdfStep?.(-1)}>
+                <ChevronLeft size={16} />
+              </BarButton>
+              <span className="shrink-0 text-[11px] tabular-nums text-text-dim">
+                {String((view?.pdfPage ?? 0) + 1).padStart(String(view?.pdfPageCount ?? 0).length, "0")} / {view?.pdfPageCount ?? 0} 页
+              </span>
+              <BarButton title="下一页" onClick={() => ctl()?.pdfStep?.(1)}>
+                <ChevronRight size={16} />
+              </BarButton>
+              <BarButton title="缩小" onClick={() => ctl()?.zoomOut?.()}>
+                <ZoomOut size={16} />
+              </BarButton>
+              <span className="w-10 text-[11px] tabular-nums text-text-dim">{Math.round((view?.pdfScale ?? 1) * 100)}%</span>
+              <BarButton title="放大" onClick={() => ctl()?.zoomIn?.()}>
                 <ZoomIn size={16} />
               </BarButton>
             </>
           )}
 
-          {/* 全界面 / 全屏(仅图片与视频,§4.6) */}
-          {(isImage || kind === "video") && (
+          {/* 全界面 / 全屏(图片 / 视频 / PDF,§4.6) */}
+          {(isImage || kind === "video" || isPdf) && (
             <>
               <Sep />
-              <BarButton title="全界面显示(Esc 退出)" onClick={() => ctl?.enterFullView?.()}>
+              <BarButton title="全界面显示(Esc 退出)" onClick={() => ctl()?.enterFullView?.()}>
                 <Maximize size={16} />
               </BarButton>
-              <BarButton title="全屏显示(Esc 退出)" onClick={() => ctl?.enterFullScreen?.()}>
+              <BarButton title="全屏显示(Esc 退出)" onClick={() => ctl()?.enterFullScreen?.()}>
                 <Expand size={16} />
               </BarButton>
             </>

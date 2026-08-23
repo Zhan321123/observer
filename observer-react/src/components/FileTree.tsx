@@ -1,9 +1,11 @@
 import { ChevronRight, ChevronDown, Folder, File as FileIcon } from "lucide-react";
 import { useFolderStore, type TreeNode } from "../stores/folderStore";
 import { useGridStore } from "../stores/gridStore";
+import { useContextMenuStore } from "../stores/contextMenuStore";
 import { kindForExt } from "../formats/registry";
 import { detectFormat } from "../lib/tauri";
 import { startPointerDrag, suppressClickAfterDrag } from "../lib/pointerDrag";
+import { fileMenuItems, folderMenuItems } from "./ContextMenu";
 import type { DirEntry } from "../types/file";
 
 /** 拖拽载荷:只带路径信息,kind 在落点经 detect_format 嗅探确定(处理 .ts/.m4s 等歧义后缀)。 */
@@ -32,6 +34,10 @@ function TreeNodeRow({ node, depth }: { node: TreeNode; depth: number }) {
           className="flex w-full items-center gap-1 rounded px-1 py-[3px] text-left text-xs text-text hover:bg-panel-2"
           style={pad}
           onClick={() => toggleDir(node)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            useContextMenuStore.getState().openMenu(e.clientX, e.clientY, folderMenuItems(entry.path));
+          }}
           title={entry.path}
         >
           {node.expanded ? (
@@ -54,7 +60,7 @@ function TreeNodeRow({ node, depth }: { node: TreeNode; depth: number }) {
     if (suppressClickAfterDrag()) return; // 拖拽松手后的残余 click 不触发
     // 经 detect_format 嗅探(区分 .ts 视频 / TypeScript、.json Lottie 等),失败回退扩展名判断
     const d = await detectFormat(entry.path).catch(() => null);
-    placeFile({ path: entry.path, name: entry.name, ext: entry.ext, kind: d?.kind ?? kindForExt(entry.ext) });
+    placeFile({ path: entry.path, name: entry.name, ext: entry.ext, kind: d?.kind ?? kindForExt(entry.ext), sniffed: d?.sniffed ?? null });
   };
 
   return (
@@ -63,6 +69,10 @@ function TreeNodeRow({ node, depth }: { node: TreeNode; depth: number }) {
       style={pad}
       onClick={onClickFile}
       onPointerDown={(e) => startPointerDrag(e, { kind: "file", ...payloadOf(entry) })}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        useContextMenuStore.getState().openMenu(e.clientX, e.clientY, fileMenuItems(entry.path));
+      }}
       title={entry.path}
     >
       <span className="w-[13px] shrink-0" />

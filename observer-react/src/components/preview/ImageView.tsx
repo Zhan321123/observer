@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { assetUrl } from "../../lib/tauri";
+import { assetUrl, readTextFile } from "../../lib/tauri";
+import { docPosGet, docPosSet } from "../../lib/persist";
+import { highlight } from "../../lib/highlight";
 import { clamp } from "../../lib/format";
 import { useCellViewStore, type FitMode } from "../../stores/cellViewStore";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -15,6 +17,8 @@ interface Tf {
 /**
  * 图片预览(§4.5):选中格内滚轮以鼠标位置为中心缩放、按住拖动平移。
  * 模式:best-fit(适应宫格)/ actual(1:1)/ free(手动缩放后),三者联动(§5 注)。
+ * 视图位置持久化:用户手动缩放/平移后(free)经 doc_position 落盘,重开/重启恢复;
+ * 自动适配(best-fit/actual)不落盘,载入时按宫格尺寸重算以保持自适应。
  */
 export function ImageView({ file, cellId, active }: PreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -24,11 +28,36 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
 
   const setView = useCellViewStore((s) => s.setView);
   const fitMode = useCellViewStore((s) => s.views[cellId]?.fitMode) as FitMode | undefined;
+  const transparencyGrid = useCellViewStore((s) => s.views[cellId]?.transparencyGrid) ?? false;
+  const svgMode = useCellViewStore((s) => s.views[cellId]?.svgMode) ?? "preview";
   const defaultFit = useSettingsStore((s) => s.imageDefaultFit);
   const setFullView = useCellViewStore((s) => s.setFullView);
   const setFullScreen = useCellViewStore((s) => s.setFullScreen);
 
   const mode: FitMode = fitMode ?? defaultFit;
+  const isSvg = file.ext === "svg";
+  const showSvgText = isSvg && svgMode === "text";
+  const [svgText, setSvgText] = useState<string | null>(null);
+
+  // svg 文本模式:读源码(svg 即 XML 文本,经 readTextFile)
+  useEffect(() => {
+    if (!showSvgText) return;
+    let cancelled = false;
+    setSvgText(null);
+    readTextFile(file.path)
+      .then((t) => {
+        if (!cancelled) setSvgText(t);
+      })
+      .catch((e) => setView(cellId, { error: String(e) }));
+    return () => {
+      cancelled = true;
+    };
+  }, [showSvgText, file.path, cellId, setView]);
+
+  // 持久化辅助:tfRef 记最新变换;userMoved 区分"用户自定义(free)"与"自动适配"
+  const tfRef = useRef(tf);
+  const userMoved = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const applyFit = useCallback(
     (m: FitMode) => {
@@ -45,6 +74,7 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
       else return;
       const x = (cw - iw * s) / 2;
       const y = (ch - ih * s) / 2;
+      userMoved.current = false; // 自动适配,不持久化
       setTf({ x, y, s });
       setView(cellId, { scale: s, fitMode: m });
     },
@@ -58,6 +88,7 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
       if (!c) return;
       const cx = c.clientWidth / 2;
       const cy = c.clientHeight / 2;
+      userMoved.current = true;
       setTf((prev) => {
         const s2 = clamp(target, 0.02, 40);
         return {
@@ -71,13 +102,29 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
     [cellId, setView]
   );
 
-  // 初次加载完成 → 按当前模式适配
+  // 载入完成 → 有持久化记录则恢复上次视图(记为 free),否则按当前模式自适应
   useEffect(() => {
-    if (loaded) applyFit(mode);
+    if (!loaded) return;
+    let cancelled = false;
+    docPosGet(file.path)
+      .then((p) => {
+        if (cancelled) return;
+        if (p && p.zoom != null && p.scroll_x != null && p.scroll_y != null) {
+          userMoved.current = true;
+          setTf({ x: p.scroll_x, y: p.scroll_y, s: p.zoom });
+          setView(cellId, { fitMode: "free", scale: p.zoom });
+        } else {
+          applyFit(mode);
+        }
+      })
+      .catch(() => applyFit(mode));
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
 
-  // 容器尺寸变化时,若处于 best-fit/actual 则重新适配
+  // 容器尺寸变化时,若处于 best-fit/actual 则重新适配(free 不打扰)
   useEffect(() => {
     const c = containerRef.current;
     if (!c) return;
@@ -98,6 +145,7 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
       const rect = c.getBoundingClientRect();
       const cx = e.clientX - rect.left;
       const cy = e.clientY - rect.top;
+      userMoved.current = true;
       setTf((prev) => {
         const k = Math.exp(-e.deltaY * 0.0015);
         const s2 = clamp(prev.s * k, 0.02, 40);
@@ -118,6 +166,35 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
     setView(cellId, { scale: tf.s });
   }, [tf.s, cellId, setView]);
 
+  // ---- 视图位置持久化(仅 free / 用户自定义时落盘) ----
+  useEffect(() => {
+    tfRef.current = tf;
+  }, [tf]);
+
+  const persistNow = useCallback(() => {
+    if (!userMoved.current) return; // 自动适配结果不落盘
+    const t = tfRef.current;
+    void docPosSet(file.path, null, t.x, t.y, t.s).catch(() => {});
+  }, [file.path]);
+
+  // tf 变化防抖 500ms 落盘
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(persistNow, 500);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [tf, persistNow]);
+
+  // 卸载(关格/退出)时落盘
+  useEffect(
+    () => () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      persistNow();
+    },
+    [persistNow]
+  );
+
   // 拖拽平移(pointer capture)
   const dragRef = useRef<{ px: number; py: number } | null>(null);
   const onPointerDown = (e: React.PointerEvent) => {
@@ -128,6 +205,7 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
   const onPointerMove = (e: React.PointerEvent) => {
     const d = dragRef.current;
     if (!d) return;
+    userMoved.current = true;
     const dx = e.clientX - d.px;
     const dy = e.clientY - d.py;
     d.px = e.clientX;
@@ -147,6 +225,17 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
         zoomIn: () => zoomTo(tf.s * 1.25),
         zoomOut: () => zoomTo(tf.s / 1.25),
         setZoom: (s) => zoomTo(s),
+        toggleTransparencyGrid: () =>
+          setView(cellId, {
+            transparencyGrid: !(useCellViewStore.getState().views[cellId]?.transparencyGrid ?? false),
+          }),
+        toggleSvgMode: () =>
+          setView(cellId, {
+            svgMode:
+              (useCellViewStore.getState().views[cellId]?.svgMode ?? "preview") === "preview"
+                ? "text"
+                : "preview",
+          }),
         enterFullView: () => setFullView(cellId),
         enterFullScreen: () => {
           setFullView(cellId);
@@ -157,10 +246,26 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
   );
 
   // 视图态清理由 gridStore 在文件变更/关格/缩容时处理;全界面切换不清理,位置得以保留
+  // svg 文本模式:显示高亮源码(不进 pan/zoom)
+  if (showSvgText) {
+    return (
+      <div className="h-full w-full overflow-auto" style={{ userSelect: "text" }}>
+        {svgText == null ? (
+          <div className="p-4 text-xs text-text-dim">加载中…</div>
+        ) : (
+          <pre
+            className="m-0 whitespace-pre-wrap break-all p-4 font-mono text-[12px] leading-relaxed text-text"
+            dangerouslySetInnerHTML={{ __html: highlight(svgText, "xml") }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full overflow-hidden"
+      className={`relative h-full w-full overflow-hidden ${transparencyGrid ? "img-checkerboard" : ""}`}
       style={{ cursor: active ? (dragRef.current ? "grabbing" : "grab") : "default" }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { Copy } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
 import { useCellViewStore } from "../stores/cellViewStore";
-import { fileStat, detectFormat, assetUrl, copyPath } from "../lib/tauri";
+import { fileStat, detectFormat, assetUrl, copyPath, ffprobeMeta } from "../lib/tauri";
 import { formatBytes, formatDateTime, formatTime } from "../lib/format";
-import type { FileStat, DetectResult } from "../types/file";
+import type { FileStat, DetectResult, VideoMeta } from "../types/file";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -24,12 +24,14 @@ export function FileInfoPanel() {
   const [stat, setStat] = useState<FileStat | null>(null);
   const [detect, setDetect] = useState<DetectResult | null>(null);
   const [imgRes, setImgRes] = useState<string | null>(null);
+  const [meta, setMeta] = useState<VideoMeta | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     setStat(null);
     setDetect(null);
     setImgRes(null);
+    setMeta(null);
     if (!file) return;
     let cancelled = false;
     fileStat(file.path).then((s) => !cancelled && setStat(s)).catch(() => {});
@@ -39,6 +41,9 @@ export function FileInfoPanel() {
       img.onload = () => !cancelled && setImgRes(`${img.naturalWidth} × ${img.naturalHeight}`);
       img.onerror = () => {};
       img.src = assetUrl(file.path);
+    }
+    if (file.kind === "video" || file.kind === "audio") {
+      ffprobeMeta(file.path).then((m) => !cancelled && setMeta(m)).catch(() => {});
     }
     return () => {
       cancelled = true;
@@ -93,10 +98,40 @@ export function FileInfoPanel() {
       {file.kind === "image" && imgRes && <Row label="分辨率">{imgRes}</Row>}
       {file.kind === "image" && <Row label="色彩/EXIF"><span className="text-text-dim/60">后续提供</span></Row>}
 
-      {mediaDuration != null && mediaDuration > 0 && <Row label="时长">{formatTime(mediaDuration)}</Row>}
+      {/* 视频/音频元信息(ffprobe,M1) */}
       {(file.kind === "video" || file.kind === "audio") && (
-        <Row label="编码/码率"><span className="text-text-dim/60">需 ffprobe(后续)</span></Row>
+        <>
+          {(() => {
+            const d = meta?.duration ?? mediaDuration;
+            return d != null && d > 0 ? <Row label="时长">{formatTime(d)}</Row> : null;
+          })()}
+          {meta?.width != null && meta?.height != null && (
+            <Row label="分辨率">{meta.width} × {meta.height}</Row>
+          )}
+          {meta?.frame_rate != null && <Row label="帧率">{meta.frame_rate.toFixed(2)} fps</Row>}
+          {meta?.video_codec && (
+            <Row label="视频编码">
+              {meta.video_codec}
+              {meta.hdr && <span className="ml-1 rounded bg-brand/30 px-1 text-[10px] text-brand-bright">HDR</span>}
+            </Row>
+          )}
+          {meta?.audio_codec && (
+            <Row label="音频编码">
+              {meta.audio_codec}
+              {meta.sample_rate != null && ` · ${meta.sample_rate} Hz`}
+              {meta.channels != null && ` · ${meta.channels} 声道`}
+            </Row>
+          )}
+          {meta?.bit_rate != null && <Row label="码率">{fmtBitrate(meta.bit_rate)}</Row>}
+          {!meta && <Row label="编码/码率"><span className="text-text-dim/60">ffprobe 探测中…</span></Row>}
+        </>
       )}
     </div>
   );
+}
+
+/** 码率(bps)→ 可读(kbps/Mbps) */
+function fmtBitrate(bps: number): string {
+  if (!Number.isFinite(bps) || bps <= 0) return "-";
+  return bps >= 1_000_000 ? `${(bps / 1_000_000).toFixed(1)} Mbps` : `${Math.round(bps / 1000)} kbps`;
 }

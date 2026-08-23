@@ -1,14 +1,16 @@
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, RotateCw } from "lucide-react";
 import { useFolderStore } from "../stores/folderStore";
 import { openFolderDialog } from "../lib/tauri";
 
 /**
- * 面包屑(§3.1):每段可点击(点击=打开该文件夹),右侧 OpenFolder 按钮。
+ * 面包屑(§3.1):每段可点击(点击=打开该文件夹),右侧 刷新 / OpenFolder 按钮。
  * 兼容两种路径分隔符;盘符段("C:")点击时补 "\" 指向盘根。
  */
 export function Breadcrumb() {
   const rootPath = useFolderStore((s) => s.rootPath);
   const openFolder = useFolderStore((s) => s.openFolder);
+  const refresh = useFolderStore((s) => s.refresh);
+  const loading = useFolderStore((s) => s.loading);
 
   const segments = rootPath.split(/[\\/]+/).filter(Boolean);
   const sep = rootPath.includes("\\") ? "\\" : "/";
@@ -42,7 +44,15 @@ export function Breadcrumb() {
         {segments.length === 0 && <span className="text-text-dim">未打开文件夹</span>}
       </div>
       <button
-        className="ml-1 flex shrink-0 items-center gap-1 rounded border border-line bg-panel-2 px-2 py-1 text-xs text-text hover:border-brand-bright"
+        className="ml-1 flex shrink-0 items-center gap-1 rounded border border-line bg-panel-2 px-2 py-1 text-xs text-text hover:border-brand-bright disabled:opacity-50"
+        onClick={() => void refresh()}
+        disabled={loading || !rootPath}
+        title="刷新文件区"
+      >
+        <RotateCw size={13} className={loading ? "animate-spin" : ""} />
+      </button>
+      <button
+        className="flex shrink-0 items-center gap-1 rounded border border-line bg-panel-2 px-2 py-1 text-xs text-text hover:border-brand-bright"
         onClick={onOpenFolder}
         title="打开文件夹"
       >

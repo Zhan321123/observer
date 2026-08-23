@@ -27,6 +27,8 @@ interface FolderState {
   openFolder(path: string): Promise<void>;
   /** 展开/折叠文件夹(原地树形,懒加载子内容) */
   toggleDir(node: TreeNode): Promise<void>;
+  /** 刷新文件区:重列根及所有已展开目录(保留展开态) */
+  refresh(): Promise<void>;
 }
 
 export const useFolderStore = create<FolderState>((set, get) => ({
@@ -66,5 +68,47 @@ export const useFolderStore = create<FolderState>((set, get) => ({
     }
     node.expanded = !node.expanded;
     set({ rootChildren: [...get().rootChildren] }); // 触发渲染
+  },
+
+  refresh: async () => {
+    const { rootPath } = get();
+    if (!rootPath) return;
+    // 收集当前展开的目录路径(用于刷新后恢复展开态)
+    const expanded = new Set<string>();
+    const collect = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (n.expanded) {
+          expanded.add(n.entry.path);
+          if (n.children) collect(n.children);
+        }
+      }
+    };
+    collect(get().rootChildren);
+
+    set({ loading: true, error: null });
+    // 递归重建:重列每个目录,展开过的目录继续向下重列
+    const build = async (path: string): Promise<TreeNode[]> => {
+      let list: DirEntry[] = [];
+      try {
+        list = await listDir(path);
+      } catch {
+        list = [];
+      }
+      const nodes = visible(list).map(toNode);
+      for (const n of nodes) {
+        if (n.entry.is_dir && expanded.has(n.entry.path)) {
+          n.expanded = true;
+          n.children = await build(n.entry.path);
+        }
+      }
+      return nodes;
+    };
+    try {
+      await allowAssetPath(rootPath).catch(() => {});
+      const rootChildren = await build(rootPath);
+      set({ rootChildren, loading: false });
+    } catch (e) {
+      set({ error: String(e), loading: false });
+    }
   },
 }));

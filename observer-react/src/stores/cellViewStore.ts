@@ -18,8 +18,40 @@ export interface CellView {
   scale?: number;
   /** 文本字号 */
   fontSize?: number;
+  /** 文本:行号开关(默认关) */
+  lineNumbers?: boolean;
+  /** 文本:自动换行开关(默认关) */
+  wordWrap?: boolean;
+  /** 宫格刷新信号:自增触发预览组件重挂载(重读/重建) */
+  reloadKey?: number;
   /** 预览失败原因(有值则该格显示错误占位) */
   error?: string;
+
+  /** Lottie:动画/文本模式(默认 animation) */
+  lottieMode?: "animation" | "text";
+  /** Markdown:预览/文本模式(默认 preview) */
+  mdMode?: "preview" | "text";
+  /** GIF:是否播放中 / 当前帧 / 总帧数(供功能条帧控件) */
+  gifPlaying?: boolean;
+  gifFrame?: number;
+  gifFrameCount?: number;
+  /** ICO:可选尺寸标签(如 "256×256")/ 当前尺寸下标 */
+  icoSizes?: string[];
+  icoIndex?: number;
+  /** xlsx:工作表名列表 / 当前 sheet 下标(默认 0) */
+  sheetNames?: string[];
+  sheetIndex?: number;
+  /** 含透明图层图片:透明棋盘格背景开关(默认关) */
+  transparencyGrid?: boolean;
+
+  /** CSV/TSV:表格/文本模式(默认 table) */
+  csvMode?: "table" | "text";
+  /** SVG:预览/文本源码模式(默认 preview) */
+  svgMode?: "preview" | "text";
+  /** PDF:当前页(0 基)/ 总页数 / 缩放倍率(供功能条翻页与缩放) */
+  pdfPage?: number;
+  pdfPageCount?: number;
+  pdfScale?: number;
 }
 
 interface CellViewState {

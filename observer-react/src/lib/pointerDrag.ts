@@ -71,5 +71,6 @@ async function performDrop(data: DragData, targetCellId: number | null) {
     name: data.name,
     ext: data.ext,
     kind: d?.kind ?? kindForExt(data.ext),
+    sniffed: d?.sniffed ?? null,
   });
 }

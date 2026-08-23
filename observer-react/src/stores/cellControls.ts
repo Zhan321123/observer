@@ -19,6 +19,32 @@ export interface CellControl {
   zoomOut?(): void;
   setZoom?(s: number): void;
   zoomText?(delta: number): void;
+  /** 文本:行号开关 */
+  toggleLineNumbers?(): void;
+  /** 文本:自动换行开关 */
+  toggleWordWrap?(): void;
+  /** 文本:复制全文 */
+  copyAll?(): void;
+  /** Lottie:动画/文本模式切换 */
+  toggleLottieMode?(): void;
+  /** Markdown:预览/文本模式切换 */
+  toggleMarkdownMode?(): void;
+  /** GIF:逐帧步进 */
+  gifStep?(dir: 1 | -1): void;
+  /** GIF:播放/暂停 */
+  gifTogglePlay?(): void;
+  /** ICO:选择尺寸下标 */
+  setIcoSize?(i: number): void;
+  /** xlsx:选择 sheet 下标 */
+  setSheet?(i: number): void;
+  /** 含透明图层图片:透明棋盘格背景开关 */
+  toggleTransparencyGrid?(): void;
+  /** CSV/TSV:表格/文本模式切换 */
+  toggleCsvMode?(): void;
+  /** SVG:预览/文本源码模式切换 */
+  toggleSvgMode?(): void;
+  /** PDF:翻页 */
+  pdfStep?(dir: 1 | -1): void;
   enterFullView?(): void;
   enterFullScreen?(): void;
 }

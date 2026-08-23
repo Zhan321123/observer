@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import type { FileRef } from "../types/file";
 import { useCellViewStore } from "./cellViewStore";
+import { useSettingsStore } from "./settingsStore";
+import { detectFormat } from "../lib/tauri";
+import { historyOpen } from "../lib/persist";
 
 /**
  * 宫格状态机(layout.md §4.1–4.4)。
@@ -22,6 +25,9 @@ const clearView = (id: number) => useCellViewStore.getState().clearView(id);
 const clearAllViews = () =>
   Object.keys(useCellViewStore.getState().views).forEach((k) => clearView(Number(k)));
 
+/** sequential 覆盖策略的轮转游标(不持久化,会话内从 0 开始) */
+let seqCursor = 0;
+
 interface GridState {
   cols: number;
   rows: number;
@@ -30,7 +36,7 @@ interface GridState {
   selected: number | null;
 
   setGridSize(cols: number, rows: number): void;
-  /** 单击文件:进第一个空格;无空格则覆盖 0 号格 */
+  /** 单击文件:进第一个空格;无空格则按 gridFullPolicy 覆盖策略选格 */
   placeFile(file: FileRef): void;
   /** 拖拽到指定格:强制覆盖 */
   placeFileAt(index: number, file: FileRef): void;
@@ -39,7 +45,11 @@ interface GridState {
   closeCell(index: number): void;
   /** 关闭其他格并单格展示(→1×1 仅留本格) */
   closeOthersSolo(index: number): void;
+  /** 刷新该格:重新 detect_format + 自增 reloadKey 触发预览重读/重建 */
+  refreshCell(index: number): Promise<void>;
   select(index: number | null): void;
+  /** 启动还原(M2 持久化):整体设置布局 + 各格文件 + 选中格 */
+  hydrate(state: { cols: number; rows: number; cells: CellState[]; selected: number | null }): void;
 }
 
 function firstFilledIndex(cells: CellState[]): number | null {
@@ -81,16 +91,34 @@ export const useGridStore = create<GridState>((set, get) => ({
   placeFile: (file) => {
     const s = get();
     const firstEmpty = s.cells.findIndex((c) => !c.file);
-    get().placeFileAt(firstEmpty >= 0 ? firstEmpty : 0, file);
+    if (firstEmpty >= 0) {
+      get().placeFileAt(firstEmpty, file);
+      return;
+    }
+    // 宫格已满:按覆盖策略选目标格(§新增,设置项 gridFullPolicy)
+    const policy = useSettingsStore.getState().gridFullPolicy;
+    let target = 0;
+    if (policy === "selected") {
+      target = s.selected ?? 0;
+    } else if (policy === "first") {
+      target = 0;
+    } else {
+      // sequential:从第一宫格开始依次向后
+      target = seqCursor % s.cells.length;
+      seqCursor = (seqCursor + 1) % s.cells.length;
+    }
+    get().placeFileAt(target, file);
   },
 
-  placeFileAt: (index, file) =>
+  placeFileAt: (index, file) => {
+    void historyOpen(file.path).catch(() => {}); // 记录预览历史(失败静默,不阻塞打开)
     set((s) => {
       clearView(index);
       const cells = s.cells.slice();
       cells[index] = { id: index, file };
       return { cells, selected: index };
-    }),
+    });
+  },
 
   moveCell: (from, to) =>
     set((s) => {
@@ -129,6 +157,25 @@ export const useGridStore = create<GridState>((set, get) => ({
       };
     }),
 
+  refreshCell: async (index) => {
+    const file = get().cells[index]?.file;
+    if (!file) return;
+    // 重新嗅探(文件可能被外部改成别的类型);失败保留原 kind/ext
+    const d = await detectFormat(file.path).catch(() => null);
+    set((s) => {
+      const cur = s.cells[index]?.file;
+      if (!cur) return {};
+      const cells = s.cells.slice();
+      cells[index] = { id: index, file: { ...cur, kind: d?.kind ?? cur.kind, ext: d?.ext ?? cur.ext } };
+      return { cells };
+    });
+    // 自增 reloadKey → 预览组件重挂载(文本重读/媒体·图片重建);同时清掉错误态以重试
+    const v = useCellViewStore.getState().views[index];
+    useCellViewStore
+      .getState()
+      .setView(index, { reloadKey: (v?.reloadKey ?? 0) + 1, error: undefined });
+  },
+
   select: (index) =>
     set((s) => {
       const anyFilled = s.cells.some((c) => c.file);
@@ -136,4 +183,6 @@ export const useGridStore = create<GridState>((set, get) => ({
       if (index != null && s.cells[index]?.file) return { selected: index };
       return { selected: s.selected ?? firstFilledIndex(s.cells) };
     }),
+
+  hydrate: ({ cols, rows, cells, selected }) => set({ cols, rows, cells, selected }),
 }));

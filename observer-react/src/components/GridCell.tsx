@@ -1,9 +1,11 @@
-import { X, Focus, AlertTriangle } from "lucide-react";
+import { X, Focus, AlertTriangle, RotateCw } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
 import { useCellViewStore } from "../stores/cellViewStore";
 import { useDragStore } from "../stores/dragStore";
+import { useContextMenuStore } from "../stores/contextMenuStore";
 import { resolvePreview } from "../formats/registry";
 import { startPointerDrag } from "../lib/pointerDrag";
+import { fileMenuItems } from "./ContextMenu";
 import type { FileRef } from "../types/file";
 
 /**
@@ -12,7 +14,7 @@ import type { FileRef } from "../types/file";
  *   标题条按钮不受拦截影响,始终可点。
  * - 拖入:文件树文件、宫格间移动均通过 pointer 拖拽(dragDropEnabled=true 禁用了 HTML5 DnD,
  *   OS 拖入则走 useOsDrop 的 tauri://drag-drop);拖到本格高亮,松手覆盖/移动。
- * - 标题条:宫格号 + 文件名 + 关闭 / 单格展示。
+ * - 标题条:宫格号 + 文件名(右键→在资源管理器打开/复制路径)+ 刷新 / 单格展示 / 关闭。
  */
 export function GridCell({ id }: { id: number }) {
   const cell = useGridStore((s) => s.cells[id]);
@@ -20,6 +22,7 @@ export function GridCell({ id }: { id: number }) {
   const select = useGridStore((s) => s.select);
   const closeCell = useGridStore((s) => s.closeCell);
   const closeOthersSolo = useGridStore((s) => s.closeOthersSolo);
+  const refreshCell = useGridStore((s) => s.refreshCell);
   const error = useCellViewStore((s) => s.views[id]?.error);
   const inFullView = useCellViewStore((s) => s.fullViewCell === id);
   // 拖拽悬停落点高亮(布尔订阅,仅本格状态变化时才重渲染)
@@ -47,6 +50,13 @@ export function GridCell({ id }: { id: number }) {
     startPointerDrag(e, { kind: "cell", from: id });
   };
 
+  // 标题条文件名右键 → 在资源管理器中打开 / 复制路径
+  const onTitleContextMenu = (e: React.MouseEvent) => {
+    if (!file) return;
+    e.preventDefault();
+    useContextMenuStore.getState().openMenu(e.clientX, e.clientY, fileMenuItems(file.path));
+  };
+
   const ring = isDropTarget
     ? "border-brand-bright shadow-[inset_0_0_0_2px_var(--color-brand-bright)]"
     : isSelected
@@ -68,9 +78,20 @@ export function GridCell({ id }: { id: number }) {
           <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-panel-2 text-[10px] tabular-nums text-text-dim">
             {id + 1}
           </span>
-          <span className="min-w-0 flex-1 truncate text-[11px] text-text-dim" title={file.path}>
+          <span
+            className="min-w-0 flex-1 truncate text-[11px] text-text-dim"
+            title={file.path}
+            onContextMenu={onTitleContextMenu}
+          >
             {file.name}
           </span>
+          <button
+            className="shrink-0 rounded p-0.5 text-text-dim hover:bg-panel-2 hover:text-text"
+            title="刷新(重新读取该格文件)"
+            onClick={() => void refreshCell(id)}
+          >
+            <RotateCw size={12} />
+          </button>
           <button
             className="shrink-0 rounded p-0.5 text-text-dim hover:bg-panel-2 hover:text-text"
             title="关闭其他宫格并单格展示"
@@ -114,7 +135,18 @@ export function GridCell({ id }: { id: number }) {
 }
 
 function CellContent({ id, file, active }: { id: number; file: FileRef; active: boolean }) {
+  // reloadKey 变化 → 重挂载预览组件(刷新该格:文本重读 / 媒体·图片重建)
+  const reloadKey = useCellViewStore((s) => s.views[id]?.reloadKey ?? 0);
   const resolved = resolvePreview(file);
   const Comp = resolved.component;
-  return <Comp file={file} cellId={id} active={active} reason={resolved.reason} strategy={resolved.strategy} />;
+  return (
+    <Comp
+      key={reloadKey}
+      file={file}
+      cellId={id}
+      active={active}
+      reason={resolved.reason}
+      strategy={resolved.strategy}
+    />
+  );
 }

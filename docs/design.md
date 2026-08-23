@@ -94,8 +94,8 @@
 ## 7. 流传输实现
 
 - **本地安全格式**（method.md §3 级别 1）：`asset://` + `convertFileSrc`，内置 Range/206 与 seek，零代码
-- **FFmpeg 转码流**：`register_uri_scheme_protocol` 注册 `stream://`，自行解析 `Range` header，返回 `206 + Content-Range + Accept-Ranges: bytes`；seek 时重启带 `-ss` 的转码进程
-- **兜底**（WKWebView 协议怪癖）：Rust 内嵌 tiny_http/axum 本地 HTTP 服务（127.0.0.1 loopback，GB/s 级内存拷贝，不经过网卡）
+- **FFmpeg 转码流（M1 已实现，有偏差）**：⚠️ **实际采用 loopback HTTP 而非 `stream://` 自定义协议**。原因：`register_uri_scheme_protocol` 的响应体须整段在内存（`Cow<[u8]>`），无法"边转边播"大文件——与本节铁律 2 的流式目标冲突。故直接采用下方原列为兜底的方案：Rust 内嵌 `tiny_http` 起 127.0.0.1 loopback 服务，ffmpeg stdout 作为响应体 chunked 流式输出；seek 时前端改 URL 的 `t` 参数、后端杀旧进程带 `-ss` 重启（进程随响应 Drop 回收）。已实测输出合法 fMP4。
+- ~~原方案`stream://` 自行解析 `Range` 返回 `206`~~（因上述内存限制弃用；若未来 Tauri 支持流式响应体可再评估）
 - **禁止**：媒体字节走 `invoke` IPC（48ms 主线程阻塞）
 
 ## 8. 前端技术栈
