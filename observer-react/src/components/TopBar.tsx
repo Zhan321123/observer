@@ -1,0 +1,32 @@
+import { useState } from "react";
+import { Settings } from "lucide-react";
+import { GridSizePicker } from "./GridSizePicker";
+import { SettingsDialog } from "./SettingsDialog";
+import logo from "../assets/observer.png";
+
+/** 顶栏 frame(§2):logo + 宫格选择 + 设置入口。 */
+export function TopBar() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  return (
+    <header className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-panel px-3">
+      <img src={logo} alt="Observer" className="h-6 w-6 object-contain" />
+      <span className="mr-2 text-sm font-semibold tracking-wide text-text">Observer</span>
+
+      <GridSizePicker />
+
+      <div className="flex-1" />
+
+      <button
+        className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-text hover:bg-panel-2"
+        onClick={() => setSettingsOpen(true)}
+        title="设置"
+      >
+        <Settings size={15} />
+        设置
+      </button>
+
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    </header>
+  );
+}

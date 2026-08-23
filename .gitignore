@@ -1,0 +1,31 @@
+# ===== 依赖 =====
+node_modules/
+
+# ===== 构建产物 =====
+# 前端
+observer-react/dist/
+observer-react/.vite/
+# Rust / Tauri(体积大,全可再生)
+observer-tauri/target/
+observer-tauri/gen/schemas/
+
+# ===== Claude Code =====
+.claude/
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 编辑器 / IDE =====
+.idea/
+.vscode/
+*.iml
+
+# ===== 日志 / 本地配置 / 缓存 =====
+*.log
+*.local
+*.tmp
+*.tsbuildinfo
+
+# 注意:Cargo.lock 与 pnpm-lock.yaml **需要提交**(应用而非库),不要忽略。

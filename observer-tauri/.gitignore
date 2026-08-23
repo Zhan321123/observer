@@ -1,0 +1,14 @@
+# Rust 构建产物(体积大,可再生)
+/target/
+
+# Tauri 生成的 JSON schema(可再生)
+/gen/schemas/
+
+# @tauri-apps/cli 依赖
+node_modules/
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 注意:Cargo.lock 需要提交(应用而非库),不要忽略。
