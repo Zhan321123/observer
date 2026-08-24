@@ -7,11 +7,15 @@ import { useGridStore, type CellState } from "../stores/gridStore";
 import { useFolderStore } from "../stores/folderStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { stateGet, stateSet } from "./persist";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import type { FileRef } from "../types/file";
 
 const KEY_GRID = "grid";
 const KEY_FOLDER = "folder";
 const KEY_SETTINGS = "settings";
+const KEY_WINDOW = "window";
+const KEY_TREE = "treeExpanded";
 
 interface PersistedGrid {
   cols: number;
@@ -42,6 +46,21 @@ export async function bootstrap(): Promise<void> {
     // 还原失败用默认值
   }
 
+  // 0.5 窗口尺寸(task.md:重启恢复;校验 ≥ tauri.conf 的 minWidth/minHeight 960×600)
+  try {
+    const raw = await stateGet(KEY_WINDOW);
+    if (raw) {
+      const { width, height } = JSON.parse(raw) as { width: number; height: number };
+      if (width >= 960 && height >= 600) {
+        await getCurrentWindow()
+          .setSize(new LogicalSize(width, height))
+          .catch(() => {});
+      }
+    }
+  } catch {
+    // 尺寸还原失败用 tauri.conf 默认
+  }
+
   // 1. 宫格全景(布局 + 各格文件 + 选中格)
   try {
     const raw = await stateGet(KEY_GRID);
@@ -64,12 +83,21 @@ export async function bootstrap(): Promise<void> {
     // 还原失败 → 保留默认 1×1,不影响启动
   }
 
-  // 2. 当前文件夹(有持久化则用之;失效如已被删除则回退默认桌面)
+  // 2. 当前文件夹 + 树展开状态(文件夹失效如已被删除则回退默认桌面)
   try {
     const folder = await stateGet(KEY_FOLDER);
     if (folder) {
       await useFolderStore.getState().openFolder(folder);
-      if (!useFolderStore.getState().error) return; // 成功
+      if (!useFolderStore.getState().error) {
+        // 文件夹打开成功 → 还原其上次的树展开状态
+        try {
+          const raw = await stateGet(KEY_TREE);
+          if (raw) await useFolderStore.getState().applyExpandedPaths(JSON.parse(raw));
+        } catch {
+          // 展开还原失败不影响启动
+        }
+        return; // 成功
+      }
       // 持久化的文件夹已不可读 → 回退默认
     }
   } catch {
@@ -116,8 +144,42 @@ export function startPersistence(): void {
           gridFullPolicy: s.gridFullPolicy,
           textMaxSizeMB: s.textMaxSizeMB,
           defaultVolume: s.defaultVolume,
+          historyRetention: s.historyRetention,
         })
       ).catch(() => {});
+    }, 500);
+  });
+
+  // 树展开状态(rootChildren 引用变化 → 防抖写回展开路径集合)
+  let treeTimer: ReturnType<typeof setTimeout> | null = null;
+  useFolderStore.subscribe((s, prev) => {
+    if (s.rootChildren === prev.rootChildren) return;
+    if (treeTimer) clearTimeout(treeTimer);
+    treeTimer = setTimeout(() => {
+      void stateSet(KEY_TREE, JSON.stringify(useFolderStore.getState().getExpandedPaths())).catch(
+        () => {}
+      );
+    }, 500);
+  });
+
+  // 窗口尺寸(resize → 防抖写回逻辑尺寸,与 bootstrap 的 LogicalSize 还原对应)
+  let winTimer: ReturnType<typeof setTimeout> | null = null;
+  void getCurrentWindow().onResized(() => {
+    if (winTimer) clearTimeout(winTimer);
+    winTimer = setTimeout(() => {
+      void (async () => {
+        const win = getCurrentWindow();
+        const scale = await win.scaleFactor().catch(() => 1);
+        const phys = await win.innerSize().catch(() => null);
+        if (!phys) return;
+        void stateSet(
+          KEY_WINDOW,
+          JSON.stringify({
+            width: Math.round(phys.width / scale),
+            height: Math.round(phys.height / scale),
+          })
+        ).catch(() => {});
+      })();
     }, 500);
   });
 }

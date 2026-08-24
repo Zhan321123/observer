@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Play, Pause, Volume2, VolumeX } from "lucide-react";
-import { assetUrl } from "../../lib/tauri";
+import { assetUrl, ffprobeMeta } from "../../lib/tauri";
 import { mediaPosGet, mediaPosSet } from "../../lib/persist";
 import { clamp, formatTime } from "../../lib/format";
 import { useCellViewStore, type FitMode } from "../../stores/cellViewStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { registerControl } from "../../stores/cellControls";
+import { VideoSeekBar } from "./VideoSeekBar";
 import type { PreviewProps } from "../../formats/types";
 
 const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -21,6 +22,7 @@ export function MediaCore({ file, cellId, active, isVideo }: PreviewProps & { is
   // 播放位置 + 音量/倍速持久化:posRef 记最新 {path,t,d,v,r} 供卸载/节流保存;lastSaveRef 控制 ~5s 节流
   const posRef = useRef<{ path: string; t: number; d: number; v: number; r: number } | null>(null);
   const lastSaveRef = useRef(0);
+  const frameRateRef = useRef(0); // ffprobe 帧率(逐帧步长用;0=未知→回退 1/30)
   const [fitMode, setFitModeLocal] = useState<FitMode>("best-fit");
   const [zoom, setZoom] = useState(1);
 
@@ -94,8 +96,11 @@ export function MediaCore({ file, cellId, active, isVideo }: PreviewProps & { is
     };
     const onPause = () => savePos();
     const onErr = () => setView(cellId, { error: "无法解码/格式不受支持(WebView2 原生)" });
+    // 起播时间戳(媒体并发配额"最久未起播"判据,§4.7)
+    const onPlayMark = () => setView(cellId, { lastPlayAt: Date.now() });
     m.addEventListener("timeupdate", sync);
     m.addEventListener("play", sync);
+    m.addEventListener("play", onPlayMark);
     m.addEventListener("pause", sync);
     m.addEventListener("pause", onPause);
     m.addEventListener("volumechange", sync);
@@ -106,6 +111,7 @@ export function MediaCore({ file, cellId, active, isVideo }: PreviewProps & { is
     return () => {
       m.removeEventListener("timeupdate", sync);
       m.removeEventListener("play", sync);
+      m.removeEventListener("play", onPlayMark);
       m.removeEventListener("pause", sync);
       m.removeEventListener("pause", onPause);
       m.removeEventListener("volumechange", sync);
@@ -124,6 +130,20 @@ export function MediaCore({ file, cellId, active, isVideo }: PreviewProps & { is
     },
     []
   );
+
+  // 逐帧步长:取 ffprobe 帧率(仅视频;音频不需要)
+  useEffect(() => {
+    if (!isVideo) return;
+    let cancelled = false;
+    ffprobeMeta(file.path)
+      .then((m) => {
+        if (!cancelled) frameRateRef.current = m.frame_rate ?? 0;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [file.path, isVideo]);
 
   // 滚轮调音量(仅选中格)
   useEffect(() => {
@@ -159,7 +179,9 @@ export function MediaCore({ file, cellId, active, isVideo }: PreviewProps & { is
           const m = mediaRef.current;
           if (m) {
             m.pause();
-            m.currentTime = clamp(m.currentTime + dir / 30, 0, m.duration || 0);
+            // 逐帧精确步长:1/帧率(ffprobe),未知回退 1/30
+            const step = 1 / (frameRateRef.current || 30);
+            m.currentTime = clamp(m.currentTime + dir * step, 0, m.duration || 0);
           }
         },
         setVolume: (v) => {
@@ -241,18 +263,31 @@ export function MediaCore({ file, cellId, active, isVideo }: PreviewProps & { is
         <span className="shrink-0 text-[11px] tabular-nums text-text-dim">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
-        <input
-          type="range"
-          className="h-1 min-w-0 flex-1 accent-brand-bright"
-          min={0}
-          max={duration || 0}
-          step={0.01}
-          value={currentTime}
-          onChange={(e) => {
-            const m = mediaRef.current;
-            if (m) m.currentTime = Number(e.target.value);
-          }}
-        />
+        {isVideo ? (
+          // 视频:进度条带悬停预览(M1)
+          <VideoSeekBar
+            path={file.path}
+            duration={duration}
+            value={currentTime}
+            onSeek={(t) => {
+              const m = mediaRef.current;
+              if (m) m.currentTime = t;
+            }}
+          />
+        ) : (
+          <input
+            type="range"
+            className="h-1 min-w-0 flex-1 accent-brand-bright"
+            min={0}
+            max={duration || 0}
+            step={0.01}
+            value={currentTime}
+            onChange={(e) => {
+              const m = mediaRef.current;
+              if (m) m.currentTime = Number(e.target.value);
+            }}
+          />
+        )}
         <button
           className="text-text hover:text-brand-bright"
           onClick={() => {

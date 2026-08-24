@@ -154,6 +154,15 @@ fn history_open_conn(conn: &Connection, path: &str) -> Result<(), String> {
         Ok(m) => (m.len() as i64, mtime_secs(&m), 0),
         Err(_) => (0, 0, 1),
     };
+    // §9.2 失效接线:文件被修改(mtime/size 与记录不符)→ 位置类记录(播放/滚动)重置,历史保留并更新元信息。
+    if missing == 0 {
+        if let Some((old_size, old_mtime)) = existing_size_mtime(conn, path)? {
+            if old_size != size || old_mtime != mtime {
+                let _ = conn.execute("DELETE FROM media_position WHERE path = ?1", params![path]);
+                let _ = conn.execute("DELETE FROM doc_position WHERE path = ?1", params![path]);
+            }
+        }
+    }
     let t = now();
     conn.execute(
         "INSERT INTO preview_history(path, size, mtime, open_count, first_opened, last_opened, missing)
@@ -168,6 +177,21 @@ fn history_open_conn(conn: &Connection, path: &str) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 读取某路径已记录的 size/mtime(供失效比对)。无记录返回 None。
+fn existing_size_mtime(conn: &Connection, path: &str) -> Result<Option<(i64, i64)>, String> {
+    let mut stmt = conn
+        .prepare("SELECT size, mtime FROM preview_history WHERE path = ?1")
+        .map_err(|e| e.to_string())?;
+    let mut rows = stmt.query(params![path]).map_err(|e| e.to_string())?;
+    match rows.next().map_err(|e| e.to_string())? {
+        Some(r) => Ok(Some((
+            r.get(0).map_err(|e| e.to_string())?,
+            r.get(1).map_err(|e| e.to_string())?,
+        ))),
+        None => Ok(None),
+    }
 }
 
 fn history_list_conn(conn: &Connection) -> Result<Vec<HistoryRow>, String> {
@@ -284,6 +308,172 @@ fn doc_pos_set_conn(
     Ok(())
 }
 
+// ---- 记录管理(design.md §9.4):各类记录的 list / remove / clear / 清理失效 / 保留策略 ----
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct MediaPosRow {
+    pub path: String,
+    pub position: f64,
+    pub duration: Option<f64>,
+    pub volume: Option<f64>,
+    pub rate: Option<f64>,
+    pub updated_at: i64,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct DocPosRow {
+    pub path: String,
+    pub page: Option<i64>,
+    pub scroll_x: Option<f64>,
+    pub scroll_y: Option<f64>,
+    pub zoom: Option<f64>,
+    pub updated_at: i64,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct ThreeDRow {
+    pub path: String,
+    pub camera: String,
+    pub updated_at: i64,
+}
+
+fn media_pos_list_conn(conn: &Connection) -> Result<Vec<MediaPosRow>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT path, position, duration, volume, rate, updated_at
+             FROM media_position ORDER BY updated_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(MediaPosRow {
+                path: r.get(0)?,
+                position: r.get(1)?,
+                duration: r.get(2)?,
+                volume: r.get(3)?,
+                rate: r.get(4)?,
+                updated_at: r.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
+fn doc_pos_list_conn(conn: &Connection) -> Result<Vec<DocPosRow>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT path, page, scroll_x, scroll_y, zoom, updated_at
+             FROM doc_position ORDER BY updated_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(DocPosRow {
+                path: r.get(0)?,
+                page: r.get(1)?,
+                scroll_x: r.get(2)?,
+                scroll_y: r.get(3)?,
+                zoom: r.get(4)?,
+                updated_at: r.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
+fn threed_get_conn(conn: &Connection, path: &str) -> Result<Option<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT camera FROM threed_camera WHERE path = ?1")
+        .map_err(|e| e.to_string())?;
+    let mut rows = stmt.query(params![path]).map_err(|e| e.to_string())?;
+    match rows.next().map_err(|e| e.to_string())? {
+        Some(r) => Ok(Some(r.get(0).map_err(|e| e.to_string())?)),
+        None => Ok(None),
+    }
+}
+
+fn threed_set_conn(conn: &Connection, path: &str, camera: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO threed_camera(path, camera, updated_at) VALUES(?1, ?2, ?3)
+         ON CONFLICT(path) DO UPDATE SET camera = excluded.camera, updated_at = excluded.updated_at",
+        params![path, camera, now()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn threed_list_conn(conn: &Connection) -> Result<Vec<ThreeDRow>, String> {
+    let mut stmt = conn
+        .prepare("SELECT path, camera, updated_at FROM threed_camera ORDER BY updated_at DESC")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(ThreeDRow {
+                path: r.get(0)?,
+                camera: r.get(1)?,
+                updated_at: r.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
+/// 删除某表中指定路径的记录(记录管理单条/勾选删除用)。table 须为白名单内表名。
+fn remove_by_path(conn: &Connection, table: &str, path: &str) -> Result<(), String> {
+    // table 来自固定调用点(不接收前端任意输入),仅用白名单校验防注入。
+    let t = match table {
+        "preview_history" | "media_position" | "doc_position" | "threed_camera" => table,
+        _ => return Err(format!("非法表名: {table}")),
+    };
+    conn.execute(&format!("DELETE FROM {t} WHERE path = ?1"), params![path])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 清空某表(记录管理"按类型清空"用)。
+fn clear_table(conn: &Connection, table: &str) -> Result<(), String> {
+    let t = match table {
+        "preview_history" | "media_position" | "doc_position" | "threed_camera" => table,
+        _ => return Err(format!("非法表名: {table}")),
+    };
+    conn.execute(&format!("DELETE FROM {t}"), [])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 一键清理失效历史(文件已不存在)。返回删除条数。
+fn history_purge_missing_conn(conn: &Connection) -> Result<usize, String> {
+    let n = conn
+        .execute("DELETE FROM preview_history WHERE missing != 0", [])
+        .map_err(|e| e.to_string())?;
+    Ok(n)
+}
+
+/// 保留策略:仅保留最近打开的 limit 条历史,超出淘汰最旧。返回删除条数。
+fn history_apply_retention_conn(conn: &Connection, limit: i64) -> Result<usize, String> {
+    let n = conn
+        .execute(
+            "DELETE FROM preview_history WHERE path NOT IN (
+               SELECT path FROM preview_history ORDER BY last_opened DESC LIMIT ?1
+             )",
+            params![limit],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(n)
+}
+
 // ---- Tauri 命令(薄封装:State 加锁 → 核心逻辑) ----
 
 #[tauri::command]
@@ -355,23 +545,99 @@ pub fn doc_pos_set(
     doc_pos_set_conn(&conn, &path, page, scroll_x, scroll_y, zoom)
 }
 
+// ---- 记录管理命令(design.md §9.4) ----
+
+#[tauri::command]
+pub fn media_pos_list(db: State<Db>) -> Result<Vec<MediaPosRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    media_pos_list_conn(&conn)
+}
+#[tauri::command]
+pub fn media_pos_remove(db: State<Db>, path: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    remove_by_path(&conn, "media_position", &path)
+}
+#[tauri::command]
+pub fn media_pos_clear(db: State<Db>) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    clear_table(&conn, "media_position")
+}
+#[tauri::command]
+pub fn doc_pos_list(db: State<Db>) -> Result<Vec<DocPosRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    doc_pos_list_conn(&conn)
+}
+#[tauri::command]
+pub fn doc_pos_remove(db: State<Db>, path: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    remove_by_path(&conn, "doc_position", &path)
+}
+#[tauri::command]
+pub fn doc_pos_clear(db: State<Db>) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    clear_table(&conn, "doc_position")
+}
+#[tauri::command]
+pub fn threed_get(db: State<Db>, path: String) -> Result<Option<String>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    threed_get_conn(&conn, &path)
+}
+#[tauri::command]
+pub fn threed_set(db: State<Db>, path: String, camera: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    threed_set_conn(&conn, &path, &camera)
+}
+#[tauri::command]
+pub fn threed_list(db: State<Db>) -> Result<Vec<ThreeDRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    threed_list_conn(&conn)
+}
+#[tauri::command]
+pub fn threed_remove(db: State<Db>, path: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    remove_by_path(&conn, "threed_camera", &path)
+}
+#[tauri::command]
+pub fn threed_clear(db: State<Db>) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    clear_table(&conn, "threed_camera")
+}
+#[tauri::command]
+pub fn history_purge_missing(db: State<Db>) -> Result<usize, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    history_purge_missing_conn(&conn)
+}
+#[tauri::command]
+pub fn history_apply_retention(db: State<Db>, limit: i64) -> Result<usize, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    history_apply_retention_conn(&conn, limit)
+}
+
 // ---- 测试 ----
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn temp_conn() -> Connection {
-        let path = std::env::temp_dir().join(format!("observer_dbtest_{}.db", std::process::id()));
+    /// 每个测试用独立库文件(并行测试不互相污染),返回 (连接, 库路径)。
+    fn temp_conn() -> (Connection, String) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let path = std::env::temp_dir().join(format!(
+            "observer_dbtest_{}_{}.db",
+            std::process::id(),
+            n
+        ));
         let _ = fs::remove_file(&path);
         // init 返回 Db,这里直接取内部连接做测试
         let db = init(&path).expect("init db");
-        db.0.into_inner().expect("into_inner")
+        (db.0.into_inner().expect("into_inner"), path.to_string_lossy().to_string())
     }
 
     #[test]
     fn app_state_roundtrip() {
-        let conn = temp_conn();
+        let (conn, _) = temp_conn();
         assert_eq!(state_get(&conn, "grid").unwrap(), None);
         state_set(&conn, "grid", "{\"cols\":2}").unwrap();
         assert_eq!(state_get(&conn, "grid").unwrap(), Some("{\"cols\":2}".into()));
@@ -381,10 +647,8 @@ mod tests {
 
     #[test]
     fn history_upsert_counts_and_missing() {
-        let conn = temp_conn();
+        let (conn, real) = temp_conn();
         // 存在的文件(本测试 db 文件即可) → missing=0;不存在 → missing=1
-        let real = std::env::temp_dir().join(format!("observer_dbtest_{}.db", std::process::id()));
-        let real = real.to_string_lossy().to_string();
         history_open_conn(&conn, &real).unwrap();
         history_open_conn(&conn, &real).unwrap();
         history_open_conn(&conn, "C:/no/such/file_xyz.mp4").unwrap();
@@ -400,7 +664,7 @@ mod tests {
 
     #[test]
     fn media_and_doc_positions_roundtrip() {
-        let conn = temp_conn();
+        let (conn, _) = temp_conn();
         assert_eq!(media_pos_get_conn(&conn, "a.mp4").unwrap(), None);
         media_pos_set_conn(&conn, "a.mp4", 12.5, Some(100.0), Some(0.8), Some(1.5)).unwrap();
         assert_eq!(
@@ -418,5 +682,79 @@ mod tests {
         let d = doc_pos_get_conn(&conn, "b.txt").unwrap().unwrap();
         assert_eq!(d.scroll_y, Some(240.0));
         assert_eq!(d.zoom, Some(16.0));
+    }
+
+    #[test]
+    fn record_management_lists_and_clears() {
+        let (conn, _) = temp_conn();
+        media_pos_set_conn(&conn, "a.mp4", 1.0, Some(10.0), None, None).unwrap();
+        media_pos_set_conn(&conn, "b.mp4", 2.0, Some(20.0), None, None).unwrap();
+        doc_pos_set_conn(&conn, "c.txt", Some(3), None, None, None).unwrap();
+        threed_set_conn(&conn, "d.glb", "{\"pos\":[0,0,1]}").unwrap();
+
+        assert_eq!(media_pos_list_conn(&conn).unwrap().len(), 2);
+        assert_eq!(doc_pos_list_conn(&conn).unwrap().len(), 1);
+        let three = threed_list_conn(&conn).unwrap();
+        assert_eq!(three.len(), 1);
+        assert_eq!(threed_get_conn(&conn, "d.glb").unwrap(), Some("{\"pos\":[0,0,1]}".into()));
+
+        remove_by_path(&conn, "media_position", "a.mp4").unwrap();
+        assert_eq!(media_pos_list_conn(&conn).unwrap().len(), 1);
+        clear_table(&conn, "doc_position").unwrap();
+        assert!(doc_pos_list_conn(&conn).unwrap().is_empty());
+        clear_table(&conn, "threed_camera").unwrap();
+        assert!(threed_list_conn(&conn).unwrap().is_empty());
+
+        // 非法表名被拒(防注入)
+        assert!(remove_by_path(&conn, "sqlite_master", "x").is_err());
+        assert!(clear_table(&conn, "app_state; DROP TABLE app_state").is_err());
+    }
+
+    #[test]
+    fn history_purge_missing_and_retention() {
+        let (conn, real) = temp_conn();
+        history_open_conn(&conn, &real).unwrap(); // 存在 → missing=0
+        history_open_conn(&conn, "C:/no/such/a.mp4").unwrap(); // missing=1
+        history_open_conn(&conn, "C:/no/such/b.mp4").unwrap(); // missing=1
+        assert_eq!(history_list_conn(&conn).unwrap().len(), 3);
+
+        // 清理失效:删掉 2 条 missing
+        assert_eq!(history_purge_missing_conn(&conn).unwrap(), 2);
+        let rows = history_list_conn(&conn).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].path, real);
+
+        // 保留策略:构造 5 条,保留 2 条
+        for i in 0..5 {
+            history_open_conn(&conn, &format!("C:/no/such/r{i}.mp4")).unwrap();
+        }
+        let before = history_list_conn(&conn).unwrap().len();
+        let removed = history_apply_retention_conn(&conn, 2).unwrap();
+        let after = history_list_conn(&conn).unwrap();
+        assert_eq!(after.len(), 2);
+        assert_eq!(removed, before - 2);
+    }
+
+    #[test]
+    fn history_open_resets_positions_on_content_change() {
+        let (conn, _) = temp_conn();
+        // 造一个真实文件,先记历史 + 播放/滚动位置
+        let f = std::env::temp_dir().join(format!("observer_inv_{}.txt", std::process::id()));
+        std::fs::write(&f, b"v1").unwrap();
+        let p = f.to_string_lossy().to_string();
+        history_open_conn(&conn, &p).unwrap();
+        media_pos_set_conn(&conn, &p, 5.0, Some(10.0), None, None).unwrap();
+        doc_pos_set_conn(&conn, &p, None, None, Some(99.0), None).unwrap();
+
+        // 修改文件内容(mtime/size 变化)→ 再次 open 应重置位置类记录
+        std::thread::sleep(std::time::Duration::from_millis(1100)); // 确保 mtime 秒数变化
+        std::fs::write(&f, b"v2-longer-content").unwrap();
+        history_open_conn(&conn, &p).unwrap();
+
+        assert!(media_pos_get_conn(&conn, &p).unwrap().is_none(), "内容变化应重置播放位置");
+        assert!(doc_pos_get_conn(&conn, &p).unwrap().is_none(), "内容变化应重置滚动位置");
+        // 历史本身保留并更新
+        assert_eq!(history_list_conn(&conn).unwrap().iter().find(|r| r.path == p).unwrap().open_count, 2);
+        let _ = std::fs::remove_file(&f);
     }
 }

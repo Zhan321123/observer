@@ -29,6 +29,10 @@ interface FolderState {
   toggleDir(node: TreeNode): Promise<void>;
   /** 刷新文件区:重列根及所有已展开目录(保留展开态) */
   refresh(): Promise<void>;
+  /** 收集当前展开的目录路径(树展开持久化的序列化源) */
+  getExpandedPaths(): string[];
+  /** 按路径集合重展开(树展开持久化还原用;须在 openFolder 之后调用) */
+  applyExpandedPaths(paths: string[]): Promise<void>;
 }
 
 export const useFolderStore = create<FolderState>((set, get) => ({
@@ -110,5 +114,41 @@ export const useFolderStore = create<FolderState>((set, get) => ({
     } catch (e) {
       set({ error: String(e), loading: false });
     }
+  },
+
+  getExpandedPaths: () => {
+    const out: string[] = [];
+    const walk = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (n.expanded) {
+          out.push(n.entry.path);
+          if (n.children) walk(n.children);
+        }
+      }
+    };
+    walk(get().rootChildren);
+    return out;
+  },
+
+  applyExpandedPaths: async (paths) => {
+    const want = new Set(paths);
+    if (want.size === 0) return;
+    // 递归:目标集合内的目录展开并预取子级(复用 toggleDir 的懒加载逻辑)
+    const walk = async (nodes: TreeNode[]): Promise<void> => {
+      for (const n of nodes) {
+        if (!n.entry.is_dir || !want.has(n.entry.path)) continue;
+        n.expanded = true;
+        if (n.children == null) {
+          try {
+            n.children = visible(await listDir(n.entry.path)).map(toNode);
+          } catch {
+            n.children = [];
+          }
+        }
+        if (n.children) await walk(n.children);
+      }
+    };
+    await walk(get().rootChildren);
+    set({ rootChildren: [...get().rootChildren] }); // 触发渲染
   },
 }));

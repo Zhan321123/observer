@@ -9,6 +9,8 @@ export type FitMode = "best-fit" | "actual" | "free";
 
 export interface CellView {
   playing?: boolean;
+  /** 最近一次"开始播放"的时间戳(媒体并发配额:超额时暂停该值最小=最久未起播的一路,§4.7) */
+  lastPlayAt?: number;
   currentTime?: number;
   duration?: number;
   volume?: number;
@@ -16,6 +18,10 @@ export interface CellView {
   fitMode?: FitMode;
   /** 图片当前缩放倍率 */
   scale?: number;
+  /** 图片平移/缩放瞬态(x/y/s):全屏切换时经 store 同步接力(卸载/重挂载无 IPC 竞态),重启才走 doc_position */
+  imgX?: number;
+  imgY?: number;
+  imgS?: number;
   /** 文本字号 */
   fontSize?: number;
   /** 文本:行号开关(默认关) */

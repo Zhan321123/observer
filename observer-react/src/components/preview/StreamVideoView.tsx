@@ -6,6 +6,7 @@ import { clamp, formatTime } from "../../lib/format";
 import { useCellViewStore, type FitMode } from "../../stores/cellViewStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { registerControl } from "../../stores/cellControls";
+import { VideoSeekBar } from "./VideoSeekBar";
 import type { PreviewProps } from "../../formats/types";
 
 const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -27,6 +28,7 @@ export function StreamVideoView({ file, cellId, active }: PreviewProps) {
 
   const offsetRef = useRef(0); // startOffset 的 ref 副本(供事件闭包读最新值)
   const durationRef = useRef(0);
+  const frameRateRef = useRef(0); // ffprobe 帧率(逐帧步长用;0=未知→回退 1/30)
   const wantPlay = useRef(false);
   // 音量/倍速持久化兜底值(loadedmetadata 时若瞬态 store 没有则用持久化的);posRef 记最新绝对位置供卸载保存
   const persistedRef = useRef<{ v: number | null; r: number | null } | null>(null);
@@ -55,6 +57,7 @@ export function StreamVideoView({ file, cellId, active }: PreviewProps) {
       .then((m) => {
         if (cancelled) return;
         durationRef.current = m.duration ?? 0;
+        frameRateRef.current = m.frame_rate ?? 0;
         setView(cellId, { duration: durationRef.current });
       })
       .catch((e) => !cancelled && setView(cellId, { error: String(e) }));
@@ -132,8 +135,11 @@ export function StreamVideoView({ file, cellId, active }: PreviewProps) {
         : "需 FFmpeg,或编码暂不支持";
       setView(cellId, { error: `流式预览失败:${msg}` });
     };
+    // 起播时间戳(媒体并发配额"最久未起播"判据,§4.7)
+    const onPlayMark = () => setView(cellId, { lastPlayAt: Date.now() });
     m.addEventListener("timeupdate", sync);
     m.addEventListener("play", sync);
+    m.addEventListener("play", onPlayMark);
     m.addEventListener("pause", sync);
     m.addEventListener("pause", savePos);
     m.addEventListener("volumechange", sync);
@@ -143,6 +149,7 @@ export function StreamVideoView({ file, cellId, active }: PreviewProps) {
     return () => {
       m.removeEventListener("timeupdate", sync);
       m.removeEventListener("play", sync);
+      m.removeEventListener("play", onPlayMark);
       m.removeEventListener("pause", sync);
       m.removeEventListener("pause", savePos);
       m.removeEventListener("volumechange", sync);
@@ -206,7 +213,11 @@ export function StreamVideoView({ file, cellId, active }: PreviewProps) {
         stepFrame: (dir) => {
           const m = mediaRef.current;
           const abs = offsetRef.current + (m?.currentTime ?? 0);
-          seekTo(abs + dir / 30);
+          // 逐帧精确步长:1/帧率(ffprobe),未知回退 1/30;暂停步进(覆盖 seekTo 的 wantPlay 检测)
+          const step = 1 / (frameRateRef.current || 30);
+          seekTo(abs + dir * step);
+          wantPlay.current = false;
+          m?.pause();
         },
         setVolume: (v) => {
           const m = mediaRef.current;
@@ -276,14 +287,11 @@ export function StreamVideoView({ file, cellId, active }: PreviewProps) {
         <span className="shrink-0 text-[11px] tabular-nums text-text-dim">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
-        <input
-          type="range"
-          className="h-1 min-w-0 flex-1 accent-brand-bright"
-          min={0}
-          max={duration || 0}
-          step={0.01}
+        <VideoSeekBar
+          path={file.path}
+          duration={duration}
           value={Math.min(currentTime, duration || currentTime)}
-          onChange={(e) => seekTo(Number(e.target.value))}
+          onSeek={seekTo}
         />
         <button
           className="text-text hover:text-brand-bright"

@@ -11,6 +11,7 @@ import { DragGhost } from "./components/DragGhost";
 import { ContextMenu } from "./components/ContextMenu";
 import { useOsDrop } from "./hooks/useOsDrop";
 import { useMediaKeys } from "./hooks/useMediaKeys";
+import { useMediaQuota } from "./hooks/useMediaQuota";
 import { bootstrap, startPersistence } from "./lib/persistence";
 
 /**
@@ -25,6 +26,7 @@ import { bootstrap, startPersistence } from "./lib/persistence";
 export default function App() {
   useOsDrop();
   useMediaKeys();
+  useMediaQuota();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {

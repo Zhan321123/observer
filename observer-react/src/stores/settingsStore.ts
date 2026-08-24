@@ -21,6 +21,8 @@ interface SettingsState {
   textMaxSizeMB: number;
   /** 媒体默认音量(0..1):无该文件持久化记录时新文件以此音量打开,默认 0.3 */
   defaultVolume: number;
+  /** 预览历史保留条数上限(超出淘汰最旧),默认 500(design.md §9.4) */
+  historyRetention: number;
 
   setMediaQuota(n: number): void;
   setThreeDQuota(n: number): void;
@@ -28,6 +30,7 @@ interface SettingsState {
   setGridFullPolicy(p: GridFullPolicy): void;
   setTextMaxSizeMB(n: number): void;
   setDefaultVolume(n: number): void;
+  setHistoryRetention(n: number): void;
   /** 启动还原持久化的设置项(M2) */
   hydrate(p: {
     mediaQuota?: number;
@@ -36,6 +39,7 @@ interface SettingsState {
     gridFullPolicy?: GridFullPolicy;
     textMaxSizeMB?: number;
     defaultVolume?: number;
+    historyRetention?: number;
   }): void;
 }
 
@@ -46,6 +50,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   gridFullPolicy: "selected",
   textMaxSizeMB: 10,
   defaultVolume: 0.3,
+  historyRetention: 500,
 
   setMediaQuota: (n) => set({ mediaQuota: Math.max(1, Math.floor(n) || 1) }),
   setThreeDQuota: (n) => set({ threeDQuota: Math.min(8, Math.max(1, Math.floor(n) || 1)) }),
@@ -53,5 +58,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setGridFullPolicy: (p) => set({ gridFullPolicy: p }),
   setTextMaxSizeMB: (n) => set({ textMaxSizeMB: Math.min(1024, Math.max(1, Math.floor(n) || 1)) }),
   setDefaultVolume: (n) => set({ defaultVolume: Math.min(1, Math.max(0, n || 0)) }),
+  setHistoryRetention: (n) => set({ historyRetention: Math.max(1, Math.floor(n) || 1) }),
   hydrate: (p) => set(p),
 }));

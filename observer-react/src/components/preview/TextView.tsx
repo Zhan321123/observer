@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MarkdownIt from "markdown-it";
+import DOMPurify from "dompurify";
 import lottie from "lottie-web";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -88,7 +89,9 @@ export function TextView({ file, cellId, active }: PreviewProps) {
 
   const html = useMemo(() => {
     if (text == null) return "";
-    return showMd ? md.render(text) : highlight(text, highlightExt);
+    // markdown 渲染经 DOMPurify 消毒(task.md:渲染不可信内容前必备;md 已 html:false,此为纵深防御)。
+    // 代码高亮(highlight)输出已逐 token 转义,无需再消毒。
+    return showMd ? DOMPurify.sanitize(md.render(text)) : highlight(text, highlightExt);
   }, [text, showMd, highlightExt]);
 
   const gutterText = useMemo(() => {

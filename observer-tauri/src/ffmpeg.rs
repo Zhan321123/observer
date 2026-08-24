@@ -11,6 +11,7 @@ use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
+use std::sync::OnceLock;
 
 // ---------- 二进制解析 ----------
 
@@ -59,6 +60,25 @@ pub fn ffprobe_path() -> Result<PathBuf, String> {
     find_binary("ffprobe").ok_or_else(|| {
         "未找到 ffprobe(可设置 OBSERVER_FFPROBE 环境变量,或将 ffprobe 置于 PATH/应用目录)".to_string()
     })
+}
+
+/// 探测本机 ffmpeg 是否含 zscale(libzimg)+ tonemap 滤镜(HDR→SDR 需要)。
+/// 进程内缓存一次探测结果;任一缺失则回退普通转码(HDR 可播但偏色,§4.2)。
+fn tonemap_available() -> bool {
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *AVAILABLE.get_or_init(detect_tonemap)
+}
+
+fn detect_tonemap() -> bool {
+    let Ok(ffmpeg) = ffmpeg_path() else { return false };
+    let Ok(out) = Command::new(ffmpeg)
+        .args(["-hide_banner", "-filters"])
+        .output()
+    else {
+        return false;
+    };
+    let s = String::from_utf8_lossy(&out.stdout);
+    s.contains("zscale") && s.contains("tonemap")
 }
 
 // ---------- ffprobe 元信息 ----------
@@ -239,11 +259,15 @@ fn build_ffmpeg(path: &Path, seek: f64, meta: &VideoMeta) -> Result<(Command, &'
             "-preset", "veryfast",
             "-tune", "zerolatency",
             "-crf", "23",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "160k",
-            "-ac", "2",
         ]);
+        // 级别 4:HDR → SDR 色调映射(method.md §3)。zscale 转线性光 → hable 映射 → 转回 bt709。
+        // 需本机 ffmpeg 含 zscale(libzimg)+tonemap;否则回退普通转码(HDR 可播但偏色)。
+        if meta.hdr && tonemap_available() {
+            cmd.arg("-vf").arg(
+                "zscale=t=linear:npl=100,tonemap=hable,zscale=t=bt709:m=bt709:r=tv,format=yuv420p",
+            );
+        }
+        cmd.args(["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ac", "2"]);
     }
     // 流式 fragmented MP4(可边产边播、可从 -ss 处起播)
     cmd.args([
@@ -400,7 +424,7 @@ pub struct StreamState {
 
 // ---------- 缩略图(海报帧) ----------
 
-/// 生成视频海报帧到磁盘缓存(key = path+mtime+size),返回 PNG 路径(前端经 asset:// 加载)。
+/// 生成视频海报帧到磁盘缓存(key = path+size+mtime+取帧秒),返回 PNG 路径(前端经 asset:// 加载)。
 #[tauri::command]
 pub fn video_thumbnail(
     app: tauri::AppHandle,
@@ -409,12 +433,23 @@ pub fn video_thumbnail(
 ) -> Result<String, String> {
     use tauri::Manager;
     let meta_fs = std::fs::metadata(&path).map_err(|e| format!("无法读取文件: {e}"))?;
+    // 取帧时间(秒),默认 1s;按秒量化进缓存 key(进度条悬停按秒分桶 → 每时间点独立缓存且有界)。
+    let t = at.unwrap_or(1.0).max(0.0);
+    let t_bucket = t.round() as u64;
+    let mtime = meta_fs
+        .modified()
+        .ok()
+        .and_then(|x| x.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
     let key = format!("{:x}", {
-        // 简易稳定 key:路径 + 长度 + mtime
+        // 稳定 key:路径 + 长度 + mtime + 取帧秒(修复:此前漏算 mtime 与 at,悬停不同时间点会撞缓存)
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
         path.hash(&mut h);
         meta_fs.len().hash(&mut h);
+        mtime.hash(&mut h);
+        t_bucket.hash(&mut h);
         h.finish()
     });
     let dir = app
@@ -428,7 +463,6 @@ pub fn video_thumbnail(
         return Ok(out.to_string_lossy().to_string());
     }
 
-    let t = at.unwrap_or(1.0);
     let status = Command::new(ffmpeg_path()?)
         .args([
             "-hide_banner",

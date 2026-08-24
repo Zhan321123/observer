@@ -1,14 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { useSettingsStore, type GridFullPolicy } from "../stores/settingsStore";
+import { RecordManagerDialog } from "./RecordManagerDialog";
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-/** 设置对话框(§2):资源配额 / 宫格 / 图片偏好 / 记录管理(说明)。 */
+/** 设置对话框(§2):资源配额 / 宫格 / 图片偏好 / 记录管理。 */
 export function SettingsDialog({ open, onClose }: Props) {
+  const [recordsOpen, setRecordsOpen] = useState(false);
   const mediaQuota = useSettingsStore((s) => s.mediaQuota);
   const threeDQuota = useSettingsStore((s) => s.threeDQuota);
   const imageDefaultFit = useSettingsStore((s) => s.imageDefaultFit);
@@ -139,13 +141,20 @@ export function SettingsDialog({ open, onClose }: Props) {
 
           <section>
             <h3 className="mb-2 text-xs font-medium text-text-dim">记录管理</h3>
-            <p className="text-xs leading-relaxed text-text-dim/70">
-              预览历史可从顶栏「历史」查看与清空。播放位置 / 滚动位置 / 3D 视角已随持久化层(SQLite)落盘并自动恢复;
-              按类型分组的选择性删除、保留策略等完整记录管理将随 M2 提供(design.md §9.4)。
+            <p className="mb-2 text-xs leading-relaxed text-text-dim/70">
+              预览历史 / 播放位置 / 文档位置 / 3D 视角均存本地 SQLite,可按类型查看与选择性删除(design.md §9.4)。
             </p>
+            <button
+              className="rounded bg-brand/20 px-3 py-1.5 text-xs text-brand-bright hover:bg-brand/40"
+              onClick={() => setRecordsOpen(true)}
+            >
+              打开记录管理
+            </button>
           </section>
         </div>
       </div>
+
+      <RecordManagerDialog open={recordsOpen} onClose={() => setRecordsOpen(false)} />
     </div>
   );
 }

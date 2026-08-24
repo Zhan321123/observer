@@ -18,6 +18,8 @@ export interface PreviewProps {
   /** 占位/不支持时的说明(仅 PlaceholderView 使用,由 GridCell 透传) */
   reason?: string;
   strategy?: Strategy;
+  /** 覆盖图片字节来源(decode-rust 类:Rust 解码出的 PNG 经 asset://;持久化仍按原 file.path) */
+  overrideSrc?: string;
 }
 
 export interface ResolvedPreview {

@@ -54,3 +54,40 @@ export const docPosSet = (
   scrollY: number | null,
   zoom: number | null
 ) => invoke<void>("doc_pos_set", { path, page, scrollX, scrollY, zoom });
+
+// ---- 记录管理(design.md §9.4):各类记录的 list / remove / clear / 清理失效 / 保留策略 ----
+export interface MediaPosRow {
+  path: string;
+  position: number;
+  duration: number | null;
+  volume: number | null;
+  rate: number | null;
+  updated_at: number;
+}
+export interface DocPosRow {
+  path: string;
+  page: number | null;
+  scroll_x: number | null;
+  scroll_y: number | null;
+  zoom: number | null;
+  updated_at: number;
+}
+export interface ThreeDRow {
+  path: string;
+  camera: string;
+  updated_at: number;
+}
+export const mediaPosList = () => invoke<MediaPosRow[]>("media_pos_list");
+export const mediaPosRemove = (path: string) => invoke<void>("media_pos_remove", { path });
+export const mediaPosClear = () => invoke<void>("media_pos_clear");
+export const docPosList = () => invoke<DocPosRow[]>("doc_pos_list");
+export const docPosRemove = (path: string) => invoke<void>("doc_pos_remove", { path });
+export const docPosClear = () => invoke<void>("doc_pos_clear");
+export const threedList = () => invoke<ThreeDRow[]>("threed_list");
+export const threedRemove = (path: string) => invoke<void>("threed_remove", { path });
+export const threedClear = () => invoke<void>("threed_clear");
+/** 一键清理失效(文件已不存在)历史,返回删除条数 */
+export const historyPurgeMissing = () => invoke<number>("history_purge_missing");
+/** 保留策略:仅保留最近打开的 limit 条历史,返回删除条数 */
+export const historyApplyRetention = (limit: number) =>
+  invoke<number>("history_apply_retention", { limit });

@@ -10,7 +10,8 @@ export function FileTreePanel() {
   return (
     <div data-file-panel className="flex h-full flex-col bg-panel">
       <Breadcrumb />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* FileTree 自带滚动容器(虚拟滚动);此处仅撑满高度 */}
+      <div className="min-h-0 flex-1">
         <FileTree />
       </div>
       <OpenedFilesList />

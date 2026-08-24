@@ -20,7 +20,7 @@ interface Tf {
  * 视图位置持久化:用户手动缩放/平移后(free)经 doc_position 落盘,重开/重启恢复;
  * 自动适配(best-fit/actual)不落盘,载入时按宫格尺寸重算以保持自适应。
  */
-export function ImageView({ file, cellId, active }: PreviewProps) {
+export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const [tf, setTf] = useState<Tf>({ x: 0, y: 0, s: 1 });
@@ -102,9 +102,17 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
     [cellId, setView]
   );
 
-  // 载入完成 → 有持久化记录则恢复上次视图(记为 free),否则按当前模式自适应
+  // 载入完成 → 恢复视图。优先级:① cellViewStore 瞬态(全屏切换接力,同步读取无竞态);
+  // ② doc_position 持久化(重启/重开续看);③ 均无则按当前模式自适应。
   useEffect(() => {
     if (!loaded) return;
+    // ① 瞬态:free 模式的精确平移/缩放在全屏切换时原样保留(§全屏瞬态)
+    const v = useCellViewStore.getState().views[cellId];
+    if (v?.fitMode === "free" && v.imgX != null && v.imgY != null && v.imgS != null) {
+      userMoved.current = true;
+      setTf({ x: v.imgX, y: v.imgY, s: v.imgS });
+      return;
+    }
     let cancelled = false;
     docPosGet(file.path)
       .then((p) => {
@@ -161,10 +169,10 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
     return () => c.removeEventListener("wheel", onWheel);
   }, [active, cellId, setView]);
 
-  // 缩放时同步倍率到 store(供功能条缩放条显示)
+  // 缩放/平移时同步到 store(供功能条缩放条显示;imgX/Y/S 为全屏切换的瞬态接力)
   useEffect(() => {
-    setView(cellId, { scale: tf.s });
-  }, [tf.s, cellId, setView]);
+    setView(cellId, { scale: tf.s, imgX: tf.x, imgY: tf.y, imgS: tf.s });
+  }, [tf, cellId, setView]);
 
   // ---- 视图位置持久化(仅 free / 用户自定义时落盘) ----
   useEffect(() => {
@@ -273,7 +281,7 @@ export function ImageView({ file, cellId, active }: PreviewProps) {
     >
       <img
         ref={imgRef}
-        src={assetUrl(file.path)}
+        src={overrideSrc ?? assetUrl(file.path)}
         alt={file.name}
         draggable={false}
         onLoad={() => setLoaded(true)}

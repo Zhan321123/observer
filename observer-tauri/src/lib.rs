@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod ffmpeg;
 mod formats;
+mod imgdec;
 
 use tauri::Manager;
 
@@ -43,13 +44,27 @@ pub fn run() {
             db::history_list,
             db::history_remove,
             db::history_clear,
+            db::history_purge_missing,
+            db::history_apply_retention,
             db::media_pos_get,
             db::media_pos_set,
+            db::media_pos_list,
+            db::media_pos_remove,
+            db::media_pos_clear,
             db::doc_pos_get,
             db::doc_pos_set,
+            db::doc_pos_list,
+            db::doc_pos_remove,
+            db::doc_pos_clear,
+            db::threed_get,
+            db::threed_set,
+            db::threed_list,
+            db::threed_remove,
+            db::threed_clear,
             ffmpeg::ffprobe_meta,
             ffmpeg::stream_base_url,
             ffmpeg::video_thumbnail,
+            imgdec::decode_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
