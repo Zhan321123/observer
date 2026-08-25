@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { assetUrl, allowAssetPath } from "../../lib/tauri";
+import { docPosGet, docPosSet } from "../../lib/persist";
 import { clamp } from "../../lib/format";
 import { useCellViewStore } from "../../stores/cellViewStore";
 import { registerControl } from "../../stores/cellControls";
@@ -64,6 +65,7 @@ export function PdfView({ file, cellId, active }: PreviewProps) {
   const pageSizeRef = useRef<{ w: number; h: number } | null>(null);
   const userMoved = useRef(false);
   const tfRef = useRef(tf);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hover, setHover] = useState<"left" | "right" | "mid" | null>(null);
 
   useEffect(() => {
@@ -92,7 +94,37 @@ export function PdfView({ file, cellId, active }: PreviewProps) {
           return;
         }
         docRef.current = doc;
-        setView(cellId, { pdfPageCount: doc.numPages, pdfPage: 0, pdfScale: 1 });
+        // 恢复页码/缩放(M4-PDF 持久化):① 瞬态(全屏接力,store 已有 pdfPage)
+        //   ② doc_position(重启/重开)③ 默认第 0 页自适应。
+        const v = useCellViewStore.getState().views[cellId];
+        let restorePage = 0;
+        let restoreTf: Tf | null = null;
+        if (v?.pdfPage != null) {
+          restorePage = v.pdfPage;
+          if (v.pdfX != null && v.pdfY != null && v.pdfScale != null) {
+            restoreTf = { x: v.pdfX, y: v.pdfY, s: v.pdfScale };
+          }
+        } else {
+          const p = await docPosGet(file.path).catch(() => null);
+          if (cancelled) return;
+          if (p) {
+            if (p.page != null) restorePage = p.page;
+            if (p.zoom != null && p.scroll_x != null && p.scroll_y != null) {
+              restoreTf = { x: p.scroll_x, y: p.scroll_y, s: p.zoom };
+            }
+          }
+        }
+        restorePage = clamp(restorePage, 0, doc.numPages - 1);
+        if (restoreTf) {
+          userMoved.current = true;
+          setTf(restoreTf);
+          setRenderScale(clamp(restoreTf.s, MIN_S, RENDER_MAX_S));
+        }
+        setView(cellId, {
+          pdfPageCount: doc.numPages,
+          pdfPage: restorePage,
+          pdfScale: restoreTf?.s ?? 1,
+        });
         setReady(true);
       } catch {
         if (!cancelled) setView(cellId, { error: "PDF 解析失败(文件损坏或格式异常)" });
@@ -185,10 +217,43 @@ export function PdfView({ file, cellId, active }: PreviewProps) {
     return () => clearTimeout(t);
   }, [tf.s]);
 
-  // 视图倍率同步到 store(功能条百分比显示)
+  // 视图倍率同步到 store(功能条百分比显示);手动缩放/平移时把 x/y 一并存入(全屏切换瞬态接力)
   useEffect(() => {
-    setView(cellId, { pdfScale: tf.s });
-  }, [tf.s, cellId, setView]);
+    setView(
+      cellId,
+      userMoved.current ? { pdfScale: tf.s, pdfX: tf.x, pdfY: tf.y } : { pdfScale: tf.s }
+    );
+  }, [tf, cellId, setView]);
+
+  // ---- 页码/缩放位置持久化(M4-PDF,doc_position;page 恒记,zoom/pan 仅手动缩放后) ----
+  const persistNow = useCallback(() => {
+    if (!ready) return;
+    const pg = useCellViewStore.getState().views[cellId]?.pdfPage ?? 0;
+    if (userMoved.current) {
+      const t = tfRef.current;
+      void docPosSet(file.path, pg, t.x, t.y, t.s).catch(() => {});
+    } else {
+      void docPosSet(file.path, pg, null, null, null).catch(() => {});
+    }
+  }, [ready, cellId, file.path]);
+
+  // 页码/视图变化防抖 500ms 落盘
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(persistNow, 500);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [page, tf, persistNow]);
+
+  // 卸载(关格/退出/全屏切换)时落盘
+  useEffect(
+    () => () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      persistNow();
+    },
+    [persistNow]
+  );
 
   /** 以容器中心为锚点缩放到目标倍率(功能条缩放控件) */
   const zoomTo = useCallback((target: number) => {

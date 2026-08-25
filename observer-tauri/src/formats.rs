@@ -29,6 +29,13 @@ pub fn kind_for_ext(ext: &str) -> &'static str {
         // PDF(第三批:pdf.js 渲染)
         "pdf" => "pdf",
 
+        // 3D 模型(M4:three.js loaders)
+        "gltf" | "glb" | "obj" | "fbx" | "stl" | "ply" | "dae" | "3ds" | "3mf" | "pcd"
+        | "bvh" | "vox" => "threed",
+
+        // 动效(M4:dotLottie / Rive / SVGA;Lottie 的 .json 走 text 嗅探)
+        "lottie" | "riv" | "svga" => "anim",
+
         "txt" | "json" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "rs" | "py" | "css"
         | "scss" | "less" | "html" | "htm" | "xml" | "yml" | "yaml" | "toml" | "ini" | "conf"
         | "cfg" | "log" | "csv" | "tsv" | "c" | "h" | "cpp" | "cc" | "hpp" | "cs" | "java"
@@ -56,6 +63,8 @@ pub fn kind_for_sniff(sniff: &str, fallback: &str) -> &'static str {
             "markdown" => "markdown",
             "spreadsheet" => "spreadsheet",
             "pdf" => "pdf",
+            "threed" => "threed",
+            "anim" => "anim",
             "text" => "text",
             _ => "unknown",
         },
@@ -160,4 +169,37 @@ fn looks_like_lottie(s: &str) -> bool {
         && t.contains("\"ip\"")
         && t.contains("\"op\"")
         && t.contains("\"layers\"")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// kind_for_ext 须与前端 registry.ts 的 handler 覆盖一致(单一事实来源,两端对齐)。
+    #[test]
+    fn kind_for_ext_covers_threed_and_anim() {
+        // 3D 模型(M4)
+        for e in ["gltf", "glb", "obj", "fbx", "stl", "ply", "dae", "3ds", "3mf", "pcd", "bvh", "vox"] {
+            assert_eq!(kind_for_ext(e), "threed", "ext {e} 应为 threed");
+        }
+        // 动效(M4:dotLottie/Rive/SVGA)
+        for e in ["lottie", "riv", "svga"] {
+            assert_eq!(kind_for_ext(e), "anim", "ext {e} 应为 anim");
+        }
+        // 回归:既有类别不受影响
+        assert_eq!(kind_for_ext("png"), "image");
+        assert_eq!(kind_for_ext("mp4"), "video");
+        assert_eq!(kind_for_ext("mp3"), "audio");
+        assert_eq!(kind_for_ext("pdf"), "pdf");
+        assert_eq!(kind_for_ext("json"), "text"); // Lottie 的 .json 仍走 text 嗅探
+        assert_eq!(kind_for_ext("xyz"), "unknown");
+    }
+
+    /// kind_for_sniff 的 fallback 透传新类别(未命中嗅探时保留 ext 判断)。
+    #[test]
+    fn kind_for_sniff_fallback_keeps_new_kinds() {
+        assert_eq!(kind_for_sniff("something-else", "threed"), "threed");
+        assert_eq!(kind_for_sniff("something-else", "anim"), "anim");
+        assert_eq!(kind_for_sniff("lottie", "text"), "text");
+    }
 }

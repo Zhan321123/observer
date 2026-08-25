@@ -79,7 +79,8 @@ export function FileInfoPanel() {
   };
 
   const kindLabel: Record<string, string> = {
-    image: "图片", video: "视频", audio: "音频", text: "文本", markdown: "Markdown", unknown: "未知",
+    image: "图片", video: "视频", audio: "音频", text: "文本", markdown: "Markdown",
+    spreadsheet: "表格", pdf: "PDF", threed: "3D 模型", anim: "动效", unknown: "未知",
   };
 
   const mediaDuration = (file.kind === "video" || file.kind === "audio") ? view?.duration : undefined;
@@ -150,8 +151,37 @@ export function FileInfoPanel() {
           {!meta && <Row label="编码/码率"><span className="text-text-dim/60">ffprobe 探测中…</span></Row>}
         </>
       )}
+
+      {/* 3D 模型统计(layout.md §6):顶点/面数、材质数、动画数、包围盒尺寸(由 ThreeView 加载后写入) */}
+      {file.kind === "threed" && (
+        <>
+          {view?.threedInfo ? (
+            <>
+              <Row label="顶点 / 面">
+                {view.threedInfo.vertices.toLocaleString()} / {view.threedInfo.triangles.toLocaleString()}
+              </Row>
+              <Row label="材质数">{view.threedInfo.materials}</Row>
+              <Row label="动画数">{view.threedInfo.animations}</Row>
+              <Row label="包围盒">
+                {view.threedInfo.bbox.map(fmtDim).join(" × ")}
+              </Row>
+            </>
+          ) : (
+            <Row label="模型"><span className="text-text-dim/60">解析中…</span></Row>
+          )}
+        </>
+      )}
     </div>
   );
+}
+
+/** 3D 包围盒单维尺寸 → 可读(世界单位跨度大,自适应精度) */
+function fmtDim(n: number): string {
+  if (!Number.isFinite(n)) return "-";
+  if (n === 0) return "0";
+  const a = Math.abs(n);
+  if (a >= 1000 || a < 0.01) return n.toExponential(2);
+  return String(Math.round(n * 100) / 100);
 }
 
 /** 码率(bps)→ 可读(kbps/Mbps) */

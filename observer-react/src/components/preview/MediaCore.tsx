@@ -8,6 +8,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { registerControl } from "../../stores/cellControls";
 import { VideoSeekBar } from "./VideoSeekBar";
 import { Waveform } from "./Waveform";
+import { SeekBar } from "./SeekBar";
 import type { PreviewProps } from "../../formats/types";
 
 const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -251,12 +252,16 @@ export function MediaCore({
         {isVideo ? (
           <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={mediaSrc} style={mediaStyle} playsInline />
         ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-3">
+          // 音频主体:文件名 + 声波可视化(§修改点2;seek 由控制条 range 条负责)
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3">
             <audio ref={mediaRef as React.RefObject<HTMLAudioElement>} src={mediaSrc} />
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand/20">
-              {playing ? <Pause size={28} className="text-brand-bright" /> : <Play size={28} className="text-brand-bright" />}
-            </div>
-            <div className="max-w-full truncate px-4 text-xs text-text-dim">{file.name}</div>
+            <div className="max-w-full truncate text-xs text-text-dim">{file.name}</div>
+            <Waveform
+              path={waveformPath ?? file.path}
+              duration={duration}
+              value={currentTime}
+              height={64}
+            />
           </div>
         )}
       </div>
@@ -288,16 +293,16 @@ export function MediaCore({
             }}
           />
         ) : (
-          // 音频:波形进度条(M3),点击/拖动 seek;峰值未就绪时显示基线 + 进度
-          <Waveform
-            path={waveformPath ?? file.path}
+          // 音频:普通 range 进度条(§修改点2),拖动即 seek(本地文件寻址便宜)
+          <SeekBar
             duration={duration}
             value={currentTime}
+            live
             onSeek={(t) => {
               const m = mediaRef.current;
               if (m) m.currentTime = t;
             }}
-            height={30}
+            className="h-1 min-w-0 flex-1 accent-brand-bright"
           />
         )}
         <button

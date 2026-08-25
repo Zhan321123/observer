@@ -55,6 +55,11 @@ export const docPosSet = (
   zoom: number | null
 ) => invoke<void>("doc_pos_set", { path, page, scrollX, scrollY, zoom });
 
+// ---- threed_camera(3D 视角:相机参数 + 显示选项 JSON,按文件;M4) ----
+export const threedGet = (path: string) => invoke<string | null>("threed_get", { path });
+export const threedSet = (path: string, camera: string) =>
+  invoke<void>("threed_set", { path, camera });
+
 // ---- 记录管理(design.md §9.4):各类记录的 list / remove / clear / 清理失效 / 保留策略 ----
 export interface MediaPosRow {
   path: string;

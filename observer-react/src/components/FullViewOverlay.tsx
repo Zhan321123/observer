@@ -54,7 +54,14 @@ export function FullViewOverlay() {
 
   return (
     <div className="fixed inset-0 z-[90] bg-black">
-      <Comp file={file} cellId={fullViewCell} active reason={resolved.reason} strategy={resolved.strategy} />
+      <Comp
+        key={file.path}
+        file={file}
+        cellId={fullViewCell}
+        active
+        reason={resolved.reason}
+        strategy={resolved.strategy}
+      />
       <div className="pointer-events-none absolute right-3 top-3 text-[11px] text-white/50">
         Esc 退出
       </div>

@@ -7,6 +7,7 @@ import { useCellViewStore } from "../../stores/cellViewStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { registerControl } from "../../stores/cellControls";
 import { Waveform } from "./Waveform";
+import { SeekBar } from "./SeekBar";
 import type { PreviewProps } from "../../formats/types";
 
 const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -223,7 +224,7 @@ export function StreamAudioView({ file, cellId, active }: PreviewProps) {
 
   return (
     <div ref={containerRef} className="flex h-full w-full flex-col bg-black/20">
-      {/* 波形可视区(点击/拖动 = seek) */}
+      {/* 波形可视区(§修改点2:纯展示;seek 由控制条 range 条负责) */}
       <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-3">
         {src && <audio ref={mediaRef} src={src} />}
         <div className="max-w-full truncate text-xs text-text-dim">{file.name}</div>
@@ -232,7 +233,6 @@ export function StreamAudioView({ file, cellId, active }: PreviewProps) {
             path={file.path}
             duration={duration}
             value={Math.min(currentTime, duration || currentTime)}
-            onSeek={seekTo}
             height={56}
           />
         </div>
@@ -250,7 +250,14 @@ export function StreamAudioView({ file, cellId, active }: PreviewProps) {
         <span className="shrink-0 text-[11px] tabular-nums text-text-dim">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
-        <div className="min-w-0 flex-1" />
+        {/* 普通 range 进度条(§修改点2):流式 seek = 改 startOffset 重启流,故松手才跳(live=false) */}
+        <SeekBar
+          duration={duration}
+          value={currentTime}
+          live={false}
+          onSeek={seekTo}
+          className="h-1 min-w-0 flex-1 accent-brand-bright"
+        />
         <button
           className="text-text hover:text-brand-bright"
           onClick={() => {

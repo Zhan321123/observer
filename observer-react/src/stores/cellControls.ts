@@ -45,6 +45,16 @@ export interface CellControl {
   toggleSvgMode?(): void;
   /** PDF:翻页 */
   pdfStep?(dir: 1 | -1): void;
+  /** 3D:重置视角(回自适应取景) */
+  threedReset?(): void;
+  /** 3D:自动旋转开关 */
+  toggleThreedAutoRotate?(): void;
+  /** 3D:线框模式开关 */
+  toggleThreedWireframe?(): void;
+  /** 3D:平面网格显示开关 */
+  toggleThreedGrid?(): void;
+  /** 3D:光照环境切换(循环预设) */
+  cycleThreedLight?(): void;
   enterFullView?(): void;
   enterFullScreen?(): void;
 }

@@ -12,6 +12,7 @@ import { ContextMenu } from "./components/ContextMenu";
 import { useOsDrop } from "./hooks/useOsDrop";
 import { useMediaKeys } from "./hooks/useMediaKeys";
 import { useMediaQuota } from "./hooks/useMediaQuota";
+import { useThreeDQuota } from "./hooks/useThreeDQuota";
 import { bootstrap, startPersistence } from "./lib/persistence";
 
 /**
@@ -27,6 +28,7 @@ export default function App() {
   useOsDrop();
   useMediaKeys();
   useMediaQuota();
+  useThreeDQuota();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {

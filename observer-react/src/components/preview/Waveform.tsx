@@ -9,7 +9,6 @@ interface WaveformProps {
   duration: number;
   /** 当前播放时间(秒) */
   value: number;
-  onSeek: (t: number) => void;
   /** 波形高度(px) */
   height?: number;
 }
@@ -20,17 +19,17 @@ const css = (name: string, fallback: string) => {
 };
 
 /**
- * 音频波形进度条(M3):canvas 画 min/max 峰值,已播/未播分色,点击/拖动 seek。
+ * 音频波形可视化(M3):canvas 画 min/max 峰值,已播/未播分色 + 播放头。
  * 峰值来自后端 `audio_waveform`(FFmpeg 解码 → 单声道 8k s16 → 分桶峰值)。
- * 用于原生音频(MediaCore)与流式音频(StreamAudioView)的进度可视化。
+ * 纯展示(§修改点2):宫格主体显示声波;seek 由普通 range 条(SeekBar)负责。
+ * 用于原生音频(MediaCore)与流式音频(StreamAudioView)的主体可视化。
  */
-export function Waveform({ path, duration, value, onSeek, height = 44 }: WaveformProps) {
+export function Waveform({ path, duration, value, height = 44 }: WaveformProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [peaks, setPeaks] = useState<Array<[number, number]> | null>(
     () => peakCache.get(path) ?? null
   );
-  const draggingRef = useRef(false);
   const valueRef = useRef(value);
   valueRef.current = value;
 
@@ -104,46 +103,8 @@ export function Waveform({ path, duration, value, onSeek, height = 44 }: Wavefor
     return () => ro.disconnect();
   }, [peaks, duration, height, value]);
 
-  // 点击 / 拖动 seek(按 x 比例映射到时间)
-  useEffect(() => {
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-    const seekAt = (clientX: number) => {
-      const rect = wrap.getBoundingClientRect();
-      if (rect.width <= 0 || duration <= 0) return;
-      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-      onSeek(ratio * duration);
-    };
-    const onDown = (e: PointerEvent) => {
-      draggingRef.current = true;
-      wrap.setPointerCapture(e.pointerId);
-      seekAt(e.clientX);
-    };
-    const onMove = (e: PointerEvent) => {
-      if (draggingRef.current) seekAt(e.clientX);
-    };
-    const onUp = () => {
-      draggingRef.current = false;
-    };
-    wrap.addEventListener("pointerdown", onDown);
-    wrap.addEventListener("pointermove", onMove);
-    wrap.addEventListener("pointerup", onUp);
-    wrap.addEventListener("pointercancel", onUp);
-    return () => {
-      wrap.removeEventListener("pointerdown", onDown);
-      wrap.removeEventListener("pointermove", onMove);
-      wrap.removeEventListener("pointerup", onUp);
-      wrap.removeEventListener("pointercancel", onUp);
-    };
-  }, [duration, onSeek]);
-
   return (
-    <div
-      ref={wrapRef}
-      className="w-full min-w-0 flex-1 cursor-pointer touch-none select-none"
-      style={{ height }}
-      title="点击 / 拖动跳转"
-    >
+    <div ref={wrapRef} className="w-full min-w-0 select-none" style={{ height }}>
       <canvas ref={canvasRef} className="block" />
     </div>
   );

@@ -6,6 +6,8 @@ import { audioHandler } from "./handlers/audio";
 import { markdownHandler } from "./handlers/markdown";
 import { spreadsheetHandler } from "./handlers/spreadsheet";
 import { pdfHandler } from "./handlers/pdf";
+import { threedHandler } from "./handlers/threed";
+import { animHandler } from "./handlers/anim";
 import { textHandler } from "./handlers/text";
 import { PlaceholderView } from "../components/preview/PlaceholderView";
 
@@ -20,6 +22,8 @@ const handlers: FormatHandler[] = [
   markdownHandler,
   spreadsheetHandler,
   pdfHandler,
+  threedHandler,
+  animHandler,
   textHandler,
 ];
 

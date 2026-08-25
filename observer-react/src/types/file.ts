@@ -1,6 +1,16 @@
 // 与 Rust 侧 commands.rs / formats.rs 返回结构对应的类型,以及前端通用的文件引用。
 
-export type FileKind = "image" | "video" | "audio" | "text" | "markdown" | "spreadsheet" | "pdf" | "unknown";
+export type FileKind =
+  | "image"
+  | "video"
+  | "audio"
+  | "text"
+  | "markdown"
+  | "spreadsheet"
+  | "pdf"
+  | "threed"
+  | "anim"
+  | "unknown";
 
 /** list_dir 返回的目录项 */
 export interface DirEntry {

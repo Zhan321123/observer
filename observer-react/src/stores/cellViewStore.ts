@@ -58,6 +58,29 @@ export interface CellView {
   pdfPage?: number;
   pdfPageCount?: number;
   pdfScale?: number;
+  /** PDF:平移瞬态(x/y,全屏切换接力;重启才走 doc_position) */
+  pdfX?: number;
+  pdfY?: number;
+
+  /** 3D:相机瞬态接力(全屏切换保留视角,同步读取无 IPC 竞态;重启才走 threed_camera)。
+   *  path 标记该视角属于哪个文件:宫内替换文件时旧相机的瞬态不被新模型误用(§修改点1)。 */
+  threedCam?: { path: string; p: [number, number, number]; t: [number, number, number] };
+  /** 3D:平面网格显示开关(默认 true) */
+  threedGrid?: boolean;
+  /** 3D:线框模式开关(默认 false) */
+  threedWireframe?: boolean;
+  /** 3D:自动旋转开关(默认 false) */
+  threedAutoRotate?: boolean;
+  /** 3D:光照环境预设下标(默认 0) */
+  threedLight?: number;
+  /** 3D:模型统计(顶点/面/材质/动画/包围盒,供文件信息框) */
+  threedInfo?: {
+    vertices: number;
+    triangles: number;
+    materials: number;
+    animations: number;
+    bbox: [number, number, number];
+  };
 }
 
 interface CellViewState {

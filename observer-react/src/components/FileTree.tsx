@@ -11,6 +11,8 @@ import {
   Table2,
   BookOpen,
   FileText,
+  Boxes,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { useFolderStore, type TreeNode } from "../stores/folderStore";
@@ -41,6 +43,8 @@ const KIND_ICON: Record<FileKind, { Icon: LucideIcon; cls: string }> = {
   audio: { Icon: Music, cls: "text-rose-400/80" },
   spreadsheet: { Icon: Table2, cls: "text-emerald-400/80" },
   pdf: { Icon: BookOpen, cls: "text-red-400/80" },
+  threed: { Icon: Boxes, cls: "text-amber-400/80" },
+  anim: { Icon: Sparkles, cls: "text-fuchsia-400/80" },
   markdown: { Icon: FileText, cls: "text-indigo-300/80" },
   text: { Icon: FileText, cls: "text-text-dim" },
   unknown: { Icon: FileIcon, cls: "text-text-dim" },

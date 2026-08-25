@@ -14,6 +14,8 @@ const LABELS: Record<string, string> = {
   markdown: "Markdown",
   spreadsheet: "表格",
   pdf: "PDF",
+  threed: "3D 模型",
+  anim: "动效",
   text: "文本 / 代码",
 };
 

@@ -1,6 +1,6 @@
 # Observer
 
-一个"预览尽可能多种类文件"的桌面应用(形态参考 macOS Quick Look / PowerToys Peek),支持宫格多文件同时预览。当前版本覆盖**图片(原生 + TIFF/PSD/RAW/HEIC 解码)、文本/代码/Markdown、音视频(原生 + FFmpeg 流式)、Lottie、PDF、电子表格**的快速预览;更多格式(3D、格式转换等)按里程碑逐步接入,见 [task.md](task.md)。
+一个"预览尽可能多种类文件"的桌面应用(形态参考 macOS Quick Look / PowerToys Peek),支持宫格多文件同时预览。当前版本覆盖**图片(原生 + TIFF/PSD/RAW/HEIC 解码)、文本/代码/Markdown、音视频(原生 + FFmpeg 流式)、Lottie/dotLottie/Rive/SVGA、PDF、电子表格、3D 模型**的快速预览;更多格式(格式转换等)按里程碑逐步接入,见 [task.md](task.md)。
 
 > 设计文档:[docs/design.md](docs/design.md)(技术架构)· [docs/layout.md](docs/layout.md)(界面交互)· [docs/method.md](docs/method.md)(格式→库 映射)
 
@@ -99,6 +99,7 @@ observer-tauri/target/release/bundle/{nsis,msi}/
 - **FFmpeg 视频管道(M1)**:mkv/ts/mov/wmv/flv/avi/hevc 等经 loopback HTTP 流式预览(remux 优先,否则实时转码 H.264+AAC),seek 改 `-ss` 重启;B 站 `video.m4s+audio.m4s` 双输入合并;ffprobe 元信息填充文件信息框
 - **图片解码(M2)**:tiff/tga/exr/dds/qoi/hdr/psd(image/psd crate)+ RAW(cr2/nef/arw/dng 等,rawler 纯 Rust)+ HEIC/HEIF(heic crate)→ 磁盘缓存 PNG 预览;图片 EXIF 摘要/色彩空间(exifr)
 - **音频进阶(M3)**:ape/wv/tta/wma/aiff/dsf 等经 loopback 流式预览(FFmpeg 转 AAC fMP4);音频波形可视化(FFmpeg 抽 PCM 峰值 → canvas,点击/拖动 seek);MIDI 经 rustysynth SoundFont 合成 → WAV 原生播放(需用户提供 .sf2)
+- **3D / 动效(M4)**:3D 模型(three.js loaders:GLTF/GLB/OBJ/FBX/STL/PLY/DAE/3DS/3MF/PCD/BVH/VOX,滚轮缩放 + 拖动旋转,视角持久化,激活视口配额降级为截图;平面网格/线框/自动旋转/光照切换);dotLottie / Rive / SVGA 播放;PDF 页码/缩放位置持久化
 - 功能条按类型切换;在资源管理器显示、复制路径可用;**三处右键菜单(资源管理器打开/复制路径)**;打开的文件列表可单格关闭;全界面/全屏显示(Esc/F11 退出)
 - 格式识别:扩展名初筛 + 魔数嗅探(ftyp/RIFF/OggS/fLaC/Lottie 五件套等)
 - 文件信息框:名称/格式/大小/修改时间/可复制路径/图片分辨率/**视频音频 ffprobe 元信息**

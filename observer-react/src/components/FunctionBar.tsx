@@ -2,6 +2,7 @@ import {
   Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, ChevronLeft, ChevronRight,
   Maximize, Expand, ZoomIn, ZoomOut, FolderOpen, Copy, Ratio, Scan,
   ListOrdered, WrapText, ClipboardCopy, Eye, FileCode, Film, LayoutGrid, Table,
+  RotateCcw, Orbit, Box, Grid3x3, Lightbulb,
 } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
 import { useCellViewStore } from "../stores/cellViewStore";
@@ -54,6 +55,8 @@ export function FunctionBar() {
   const isText = kind === "text" || kind === "markdown";
   const isSpreadsheet = kind === "spreadsheet";
   const isPdf = kind === "pdf";
+  const isThreed = kind === "threed";
+  const isAnim = kind === "anim";
   const isGif = file?.ext === "gif";
   const isIco = file?.ext === "ico";
   const isSvg = file?.ext === "svg";
@@ -338,8 +341,48 @@ export function FunctionBar() {
             </>
           )}
 
-          {/* 全界面 / 全屏(图片 / 视频 / PDF,§4.6) */}
-          {(isImage || kind === "video" || isPdf) && (
+          {/* 3D 组(§5):重置视角 / 自动旋转 / 线框 / 平面网格 / 光照环境 */}
+          {isThreed && (
+            <>
+              <BarButton title="重置视角" onClick={() => ctl()?.threedReset?.()}>
+                <RotateCcw size={16} />
+              </BarButton>
+              <BarButton
+                title="自动旋转"
+                active={view?.threedAutoRotate ?? false}
+                onClick={() => ctl()?.toggleThreedAutoRotate?.()}
+              >
+                <Orbit size={16} />
+              </BarButton>
+              <BarButton
+                title="线框模式"
+                active={view?.threedWireframe ?? false}
+                onClick={() => ctl()?.toggleThreedWireframe?.()}
+              >
+                <Box size={16} />
+              </BarButton>
+              <BarButton
+                title="平面网格"
+                active={view?.threedGrid ?? true}
+                onClick={() => ctl()?.toggleThreedGrid?.()}
+              >
+                <Grid3x3 size={16} />
+              </BarButton>
+              <BarButton title="光照环境切换" onClick={() => ctl()?.cycleThreedLight?.()}>
+                <Lightbulb size={16} />
+              </BarButton>
+            </>
+          )}
+
+          {/* 动效组(dotLottie/Rive/SVGA):播放/暂停 */}
+          {isAnim && (
+            <BarButton title={playing ? "暂停" : "播放"} onClick={() => ctl()?.toggle?.()}>
+              {playing ? <Pause size={16} /> : <Play size={16} />}
+            </BarButton>
+          )}
+
+          {/* 全界面 / 全屏(图片 / 视频 / PDF / 3D,§4.6) */}
+          {(isImage || kind === "video" || isPdf || isThreed) && (
             <>
               <Sep />
               <BarButton title="全界面显示(Esc 退出)" onClick={() => ctl()?.enterFullView?.()}>

@@ -135,13 +135,14 @@ export function GridCell({ id }: { id: number }) {
 }
 
 function CellContent({ id, file, active }: { id: number; file: FileRef; active: boolean }) {
-  // reloadKey 变化 → 重挂载预览组件(刷新该格:文本重读 / 媒体·图片重建)
+  // reloadKey 变化 → 重挂载(刷新该格);file.path 变化 → 也重挂载(宫内替换文件时状态全新,
+  // 不沿用上一文件:图片重新最佳显示 / 文本·Lottie 重读 / 3D 重新重置视角,§修改点1·3)
   const reloadKey = useCellViewStore((s) => s.views[id]?.reloadKey ?? 0);
   const resolved = resolvePreview(file);
   const Comp = resolved.component;
   return (
     <Comp
-      key={reloadKey}
+      key={`${reloadKey}:${file.path}`}
       file={file}
       cellId={id}
       active={active}
