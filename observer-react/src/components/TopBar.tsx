@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Settings, History, Shapes } from "lucide-react";
 import { GridSizePicker } from "./GridSizePicker";
 import { SettingsDialog } from "./SettingsDialog";
-import { HistoryDialog } from "./HistoryDialog";
+import { RecordManagerDialog } from "./RecordManagerDialog";
 import { SupportedTypesDialog } from "./SupportedTypesDialog";
 import logo from "../assets/observer.png";
 
@@ -30,10 +30,11 @@ export function TopBar() {
         适配类型
       </button>
 
+      {/* 历史(§交互修正):与设置内记录管理合并为单一对话框,此处打开合并后的记录管理 */}
       <button
         className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-text hover:bg-panel-2"
         onClick={() => setHistoryOpen(true)}
-        title="预览历史"
+        title="预览历史 / 记录管理"
       >
         <History size={15} />
         历史
@@ -49,7 +50,7 @@ export function TopBar() {
       </button>
 
       <SupportedTypesDialog open={typesOpen} onClose={() => setTypesOpen(false)} />
-      <HistoryDialog open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <RecordManagerDialog open={historyOpen} onClose={() => setHistoryOpen(false)} />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </header>
   );

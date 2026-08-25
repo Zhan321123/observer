@@ -29,8 +29,16 @@ export const streamBaseUrl = () => invoke<string>("stream_base_url");
 export const ffprobeMeta = (path: string) => invoke<VideoMeta>("ffprobe_meta", { path });
 export const videoThumbnail = (path: string, at?: number) =>
   invoke<string>("video_thumbnail", { path, at });
-/** M2 图片解码:tiff/tga/exr/psd 等 → 磁盘缓存 PNG,返回路径(前端经 asset:// 加载) */
+/** M2 图片解码:tiff/tga/exr/psd/RAW/HEIC 等 → 磁盘缓存 PNG,返回路径(前端经 asset:// 加载) */
 export const decodeImage = (path: string) => invoke<string>("decode_image", { path });
 /** 拼接某文件从 t 秒起的流式地址(loopback HTTP,seek=改 t 重启) */
 export const streamUrl = (base: string, path: string, t: number) =>
   `${base}/stream?path=${encodeURIComponent(path)}&t=${t.toFixed(3)}`;
+
+// ---- M3 音频进阶 ----
+/** 波形峰值:FFmpeg 解码 → 单声道 8k s16 → 每桶 [min,max] 归一化到 ±1(buckets 默认 1000) */
+export const audioWaveform = (path: string, buckets?: number) =>
+  invoke<Array<[number, number]>>("audio_waveform", { path, buckets });
+/** MIDI:rustysynth SoundFont 合成 → WAV 磁盘缓存,返回路径(前端经 asset:// 原生播放) */
+export const midiRender = (path: string, soundfont?: string) =>
+  invoke<string>("midi_render", { path, soundfont });

@@ -1,3 +1,4 @@
+mod audiox;
 mod commands;
 mod db;
 mod ffmpeg;
@@ -64,7 +65,9 @@ pub fn run() {
             ffmpeg::ffprobe_meta,
             ffmpeg::stream_base_url,
             ffmpeg::video_thumbnail,
+            ffmpeg::audio_waveform,
             imgdec::decode_image,
+            audiox::midi_render,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,6 +1,18 @@
 import { useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronRight, ChevronDown, Folder, File as FileIcon } from "lucide-react";
+import {
+  ChevronRight,
+  ChevronDown,
+  Folder,
+  File as FileIcon,
+  Image as ImageIcon,
+  Film,
+  Music,
+  Table2,
+  BookOpen,
+  FileText,
+  type LucideIcon,
+} from "lucide-react";
 import { useFolderStore, type TreeNode } from "../stores/folderStore";
 import { useGridStore } from "../stores/gridStore";
 import { useContextMenuStore } from "../stores/contextMenuStore";
@@ -8,8 +20,7 @@ import { kindForExt } from "../formats/registry";
 import { detectFormat } from "../lib/tauri";
 import { startPointerDrag, suppressClickAfterDrag } from "../lib/pointerDrag";
 import { fileMenuItems, folderMenuItems } from "./ContextMenu";
-import { TreeThumb } from "./TreeThumb";
-import type { DirEntry } from "../types/file";
+import type { DirEntry, FileKind } from "../types/file";
 
 /** 拖拽载荷:只带路径信息,kind 在落点经 detect_format 嗅探确定(处理 .ts/.m4s 等歧义后缀)。 */
 interface DragPayload {
@@ -22,6 +33,18 @@ const payloadOf = (e: DirEntry): DragPayload => ({ path: e.path, name: e.name, e
 
 /** 行高(固定,供虚拟滚动 estimateSize;长名截断为单行) */
 const ROW_H = 24;
+
+/** 文件类别 → 行内图标 + 配色(细致区分;替代缩略图位图,树行更轻、类型一目了然)。 */
+const KIND_ICON: Record<FileKind, { Icon: LucideIcon; cls: string }> = {
+  image: { Icon: ImageIcon, cls: "text-violet-400/80" },
+  video: { Icon: Film, cls: "text-sky-400/80" },
+  audio: { Icon: Music, cls: "text-rose-400/80" },
+  spreadsheet: { Icon: Table2, cls: "text-emerald-400/80" },
+  pdf: { Icon: BookOpen, cls: "text-red-400/80" },
+  markdown: { Icon: FileText, cls: "text-indigo-300/80" },
+  text: { Icon: FileText, cls: "text-text-dim" },
+  unknown: { Icon: FileIcon, cls: "text-text-dim" },
+};
 
 interface FlatRow {
   node: TreeNode;
@@ -64,7 +87,8 @@ function DirRow({ node, depth }: FlatRow) {
 function FileRow({ node, depth }: FlatRow) {
   const placeFile = useGridStore((s) => s.placeFile);
   const { entry } = node;
-  const isVideo = kindForExt(entry.ext) === "video";
+  const kind = kindForExt(entry.ext);
+  const { Icon, cls } = KIND_ICON[kind] ?? KIND_ICON.unknown;
 
   const onClickFile = async () => {
     if (suppressClickAfterDrag()) return; // 拖拽松手后的残余 click 不触发
@@ -92,7 +116,7 @@ function FileRow({ node, depth }: FlatRow) {
       title={entry.path}
     >
       <span className="w-[13px] shrink-0" />
-      {isVideo ? <TreeThumb path={entry.path} /> : <FileIcon size={13} className="shrink-0" />}
+      <Icon size={13} className={`shrink-0 ${cls}`} />
       <span className="truncate">{entry.name}</span>
     </button>
   );
@@ -101,7 +125,7 @@ function FileRow({ node, depth }: FlatRow) {
 /**
  * 文件树(§3.3):树形原地展开/折叠(类 VSCode explorer)+ 虚拟滚动(大目录不卡,§3 预留)。
  * 点文件夹=展开/折叠;点文件=预览进宫格。当前根自身不显示为节点。
- * 视频文件显示海报帧缩略图(TreeThumb,可见行懒加载)。
+ * 文件行按类别显示细致图标(图片/视频/音频/表格/文档…),不渲染缩略图位图(树更轻)。
  */
 export function FileTree() {
   const rootChildren = useFolderStore((s) => s.rootChildren);

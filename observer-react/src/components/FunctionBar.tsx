@@ -77,7 +77,7 @@ export function FunctionBar() {
         <span className="px-2 text-xs text-text-dim">未选择文件</span>
       ) : (
         <>
-          {/* 图片组(gif / ico 走专用控件,普通图片走缩放/适配) */}
+          {/* 图片组(ico 走专用尺寸下拉;普通图片与 gif 走缩放/适配,gif 帧控件在上一组) */}
           {isImage && isGif && (
             <>
               <BarButton
@@ -113,7 +113,7 @@ export function FunctionBar() {
               </select>
             </>
           )}
-          {isImage && !isGif && !isIco && (
+          {isImage && !isIco && (
             <>
               <BarButton title="最佳显示(适应宫格)" active={fitMode === "best-fit"} onClick={() => ctl()?.setFitMode?.("best-fit")}>
                 <Ratio size={16} />

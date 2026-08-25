@@ -1,14 +1,18 @@
 //! M2 图片解码(design.md §5⑤,method.md §5):纯 Rust 解码 → PNG 位图,前端经 asset:// 显示(铁律 1/2)。
 //!
-//! 覆盖:image crate(tiff/tga/exr/dds/qoi/hdr)+ psd crate(psd/psb 取合成图)。
-//! RAW(crawler)/ HEIC(imazen/heic)本轮不做(依赖最重,后续里程碑)。
-//! 解码结果走磁盘缓存(key = path+size+mtime),与 video_thumbnail 同一模式;
-//! 超大图先按比例缩再编码,避免 GB 级 TIFF/PSD 撑爆 WebView。
+//! 覆盖:image crate(tiff/tga/exr/dds/qoi/hdr)+ psd crate(psd/psb 取合成图)+ rawler(RAW,纯 Rust)。
+//! HEIC(imazen/heic)依赖最重,见 task.md。解码结果走磁盘缓存(key = path+size+mtime),
+//! 与 video_thumbnail 同一模式;超大图先按比例缩再编码,避免 GB 级 TIFF/PSD/RAW 撑爆 WebView。
 
 use std::path::Path;
 
 /// 预览用最大像素数(100MP);超出按比例缩,避免超大图卡顿/内存暴涨。
 const MAX_PIXELS: f64 = 100_000_000.0;
+
+/// RAW 扩展名(rrawler 解码;与前端 image handler / 后端 kind_for_ext 路由一致)。
+fn is_raw_ext(ext: &str) -> bool {
+    matches!(ext, "cr2" | "cr3" | "nef" | "arw" | "orf" | "rw2" | "dng" | "raf")
+}
 
 fn mtime_secs(meta: &std::fs::Metadata) -> i64 {
     meta.modified()
@@ -18,10 +22,23 @@ fn mtime_secs(meta: &std::fs::Metadata) -> i64 {
         .unwrap_or(0)
 }
 
-/// 解码为 DynamicImage(按扩展名分发;psd 走 psd crate,其余走 image crate 指定格式)。
+/// 稳定磁盘缓存 key:路径 + 长度 + mtime(文件改动后自动失效)。
+fn cache_key(path: &str, meta: &std::fs::Metadata) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    path.hash(&mut h);
+    meta.len().hash(&mut h);
+    mtime_secs(meta).hash(&mut h);
+    format!("{:x}", h.finish())
+}
+
+/// 解码为 DynamicImage(按扩展名分发;psd/heic 走专用 crate,其余走 image crate 指定格式)。
 fn decode(bytes: &[u8], ext: &str) -> Result<image::DynamicImage, String> {
     if matches!(ext, "psd" | "psb") {
         return decode_psd(bytes);
+    }
+    if matches!(ext, "heic" | "heif") {
+        return decode_heic(bytes);
     }
     let fmt = match ext {
         "tiff" | "tif" => image::ImageFormat::Tiff,
@@ -33,6 +50,27 @@ fn decode(bytes: &[u8], ext: &str) -> Result<image::DynamicImage, String> {
         other => return Err(format!("暂不支持解码的图片格式: {other}")),
     };
     image::load_from_memory_with_format(bytes, fmt).map_err(|e| format!("解码失败: {e}"))
+}
+
+/// HEIC/HEIF 解码(heic crate,纯 Rust HEVC)→ RGBA8。
+fn decode_heic(bytes: &[u8]) -> Result<image::DynamicImage, String> {
+    let out = heic::DecoderConfig::new()
+        .decode(bytes, heic::PixelLayout::Rgba8)
+        .map_err(|e| format!("HEIC 解码失败: {e}"))?;
+    let buf = image::RgbaImage::from_raw(out.width, out.height, out.data)
+        .ok_or_else(|| "HEIC 像素尺寸与宽高不符".to_string())?;
+    Ok(image::DynamicImage::ImageRgba8(buf))
+}
+
+/// RAW 解码(rrawler,纯 Rust):demosaic + 白平衡 + sRGB 显影 → DynamicImage(后续统一转 RGBA8)。
+fn decode_raw(path: &Path) -> Result<image::DynamicImage, String> {
+    let raw = rawler::decode_file(path).map_err(|e| format!("RAW 解析失败: {e}"))?;
+    let developed = rawler::imgop::develop::RawDevelop::default()
+        .develop_intermediate(&raw)
+        .map_err(|e| format!("RAW 显影失败: {e}"))?;
+    developed
+        .to_dynamic_image()
+        .ok_or_else(|| "RAW 显影产物为空".to_string())
 }
 
 /// PSD/PSB:取合成图(所有图层拍平)→ RGBA8。
@@ -58,10 +96,21 @@ fn downscale_to(img: image::DynamicImage, max_pixels: f64) -> image::DynamicImag
     img.resize(nw, nh, image::imageops::FilterType::Triangle)
 }
 
+/// 生成磁盘缓存 PNG 的完整路径(thumbs 子目录,prefix 区分用途);已存在则直接复用。
+fn cached_png(app: &tauri::AppHandle, prefix: &str, key: &str) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("thumbs");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join(format!("{prefix}_{key}.png")))
+}
+
 /// 解码图片到磁盘缓存 PNG,返回路径(前端经 asset:// 加载)。
 #[tauri::command]
 pub fn decode_image(app: tauri::AppHandle, path: String) -> Result<String, String> {
-    use tauri::Manager;
     let p = Path::new(&path);
     let ext = p
         .extension()
@@ -70,29 +119,19 @@ pub fn decode_image(app: tauri::AppHandle, path: String) -> Result<String, Strin
         .to_lowercase();
     let meta_fs = std::fs::metadata(&path).map_err(|e| format!("无法读取文件: {e}"))?;
 
-    // 缓存 key:路径 + 长度 + mtime(文件改动后自动失效重解码)
-    let key = format!("{:x}", {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        path.hash(&mut h);
-        meta_fs.len().hash(&mut h);
-        mtime_secs(&meta_fs).hash(&mut h);
-        h.finish()
-    });
-    let dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?
-        .join("thumbs");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let out = dir.join(format!("dec_{key}.png"));
+    let out = cached_png(&app, "dec", &cache_key(&path, &meta_fs))?;
     if out.is_file() {
         return Ok(out.to_string_lossy().to_string());
     }
 
-    let bytes = std::fs::read(&path).map_err(|e| format!("无法读取文件: {e}"))?;
-    let img = decode(&bytes, &ext)?;
-    // 统一转 RGBA8(EXR/HDR 的 f32 高光会截断到 255,预览可接受),再按需缩放、编码 PNG。
+    // RAW 走 rawler(需文件路径,demosaic/显影);其余走 image/psd crate(内存字节)。
+    let img = if is_raw_ext(&ext) {
+        decode_raw(p)?
+    } else {
+        let bytes = std::fs::read(&path).map_err(|e| format!("无法读取文件: {e}"))?;
+        decode(&bytes, &ext)?
+    };
+    // 统一转 RGBA8(EXR/HDR 的 f32、RAW 的 16-bit 高光会截断到 255,预览可接受),再按需缩放、编码 PNG。
     let img = image::DynamicImage::ImageRgba8(img.to_rgba8());
     let img = downscale_to(img, MAX_PIXELS);
     img.save(&out).map_err(|e| format!("PNG 编码失败: {e}"))?;

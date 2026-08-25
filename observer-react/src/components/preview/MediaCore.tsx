@@ -7,6 +7,7 @@ import { useCellViewStore, type FitMode } from "../../stores/cellViewStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { registerControl } from "../../stores/cellControls";
 import { VideoSeekBar } from "./VideoSeekBar";
+import { Waveform } from "./Waveform";
 import type { PreviewProps } from "../../formats/types";
 
 const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -15,8 +16,17 @@ const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
  * 视频/音频共用的预览核心:媒体元素 + 格内自制控制条。
  * 交互(§4.5):已选中时点击画面=播放/暂停,滚轮=调音量。
  * 数据态同步到 cellViewStore,动作注册到 cellControls(供功能条驱动)。
+ * srcOverride:播放字节来源覆盖(MIDI 等:播放合成出的 WAV,但进度/音量持久化仍按原 file.path)。
+ * waveformPath:波形取峰值的路径(默认同 file.path;MIDI 传合成出的 WAV,ffmpeg 可解)。
  */
-export function MediaCore({ file, cellId, active, isVideo }: PreviewProps & { isVideo: boolean }) {
+export function MediaCore({
+  file,
+  cellId,
+  active,
+  isVideo,
+  srcOverride,
+  waveformPath,
+}: PreviewProps & { isVideo: boolean; srcOverride?: string; waveformPath?: string }) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   // 播放位置 + 音量/倍速持久化:posRef 记最新 {path,t,d,v,r} 供卸载/节流保存;lastSaveRef 控制 ~5s 节流
@@ -227,6 +237,9 @@ export function MediaCore({ file, cellId, active, isVideo }: PreviewProps & { is
       }
     : { display: "none" };
 
+  // 播放字节来源:MIDI 等用合成出的 WAV(srcOverride),其余用原文件
+  const mediaSrc = srcOverride ?? assetUrl(file.path);
+
   return (
     <div ref={containerRef} className="flex h-full w-full flex-col bg-black/20">
       {/* 可视区 */}
@@ -236,10 +249,10 @@ export function MediaCore({ file, cellId, active, isVideo }: PreviewProps & { is
         style={{ cursor: active ? "pointer" : "default" }}
       >
         {isVideo ? (
-          <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={assetUrl(file.path)} style={mediaStyle} playsInline />
+          <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={mediaSrc} style={mediaStyle} playsInline />
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-3">
-            <audio ref={mediaRef as React.RefObject<HTMLAudioElement>} src={assetUrl(file.path)} />
+            <audio ref={mediaRef as React.RefObject<HTMLAudioElement>} src={mediaSrc} />
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand/20">
               {playing ? <Pause size={28} className="text-brand-bright" /> : <Play size={28} className="text-brand-bright" />}
             </div>
@@ -275,17 +288,16 @@ export function MediaCore({ file, cellId, active, isVideo }: PreviewProps & { is
             }}
           />
         ) : (
-          <input
-            type="range"
-            className="h-1 min-w-0 flex-1 accent-brand-bright"
-            min={0}
-            max={duration || 0}
-            step={0.01}
+          // 音频:波形进度条(M3),点击/拖动 seek;峰值未就绪时显示基线 + 进度
+          <Waveform
+            path={waveformPath ?? file.path}
+            duration={duration}
             value={currentTime}
-            onChange={(e) => {
+            onSeek={(t) => {
               const m = mediaRef.current;
-              if (m) m.currentTime = Number(e.target.value);
+              if (m) m.currentTime = t;
             }}
+            height={30}
           />
         )}
         <button

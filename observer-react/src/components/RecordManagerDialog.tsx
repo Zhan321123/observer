@@ -9,6 +9,8 @@ import {
 } from "../lib/persist";
 import { formatBytes, formatTime, formatDateTime, baseName } from "../lib/format";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useGridStore } from "../stores/gridStore";
+import { fileRefFromPath } from "../hooks/useOsDrop";
 
 interface Props {
   open: boolean;
@@ -31,9 +33,11 @@ const docSummary = (r: DocPosRow): string => {
 };
 
 /**
- * 记录管理对话框(design.md §9.4):四类本地记录(预览历史/播放位置/文档位置/3D 视角)
- * 按类型分组,支持单条删、勾选多条删、按类型清空、一键清理失效、保留策略(条数上限淘汰最旧)。
- * 全部数据仅存本地;删除 db 文件即恢复出厂。入口:设置 → 记录管理。
+ * 记录管理对话框(design.md §9.4,§交互修正-记录管理与历史合并):顶栏「历史」与设置「记录管理」
+ * 已合并为这单一对话框/入口。四类本地记录(预览历史/播放位置/文档位置/3D 视角)按类型分组,
+ * 支持单条删、勾选多条删、按类型清空、一键清理失效、保留策略(条数上限淘汰最旧);
+ * 「预览历史」组保留原历史对话框的点击重开(进首空格,失效灰显不可点)。
+ * 全部数据仅存本地;删除 db 文件即恢复出厂。入口:顶栏「历史」、设置 → 记录管理。
  */
 export function RecordManagerDialog({ open, onClose }: Props) {
   const [history, setHistory] = useState<HistoryRow[] | null>(null);
@@ -44,6 +48,18 @@ export function RecordManagerDialog({ open, onClose }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const historyRetention = useSettingsStore((s) => s.historyRetention);
   const setHistoryRetention = useSettingsStore((s) => s.setHistoryRetention);
+  const placeFile = useGridStore((s) => s.placeFile);
+
+  /** 预览历史点击重开(进首空格);失效记录不可点(调用方已挡) */
+  const openFromHistory = useCallback(
+    async (path: string) => {
+      const ref = await fileRefFromPath(path).catch(() => null);
+      if (!ref) return;
+      placeFile(ref);
+      onClose();
+    },
+    [placeFile, onClose]
+  );
 
   const reload = useCallback(async () => {
     const [h, m, d, t] = await Promise.all([
@@ -76,7 +92,7 @@ export function RecordManagerDialog({ open, onClose }: Props) {
 
   if (!open) return null;
 
-  const groups: { id: string; title: string; rows: Row[] | null; remove: (p: string) => Promise<void>; clear: () => Promise<void> }[] = [
+  const groups: { id: string; title: string; rows: Row[] | null; remove: (p: string) => Promise<void>; clear: () => Promise<void>; onOpen?: (p: string) => void }[] = [
     {
       id: "history",
       title: "预览历史",
@@ -88,6 +104,7 @@ export function RecordManagerDialog({ open, onClose }: Props) {
       })) ?? null,
       remove: historyRemove,
       clear: historyClear,
+      onOpen: (p) => void openFromHistory(p),
     },
     {
       id: "media",
@@ -267,7 +284,13 @@ export function RecordManagerDialog({ open, onClose }: Props) {
                         checked={selected.has(key(g.id, r.path))}
                         onChange={(e) => toggle(g.id, r.path, e.target.checked)}
                       />
-                      <div className={`min-w-0 flex-1 ${r.missing ? "opacity-45" : ""}`}>
+                      <div
+                        className={`min-w-0 flex-1 ${r.missing ? "opacity-45" : ""} ${
+                          g.onOpen && !r.missing ? "cursor-pointer" : ""
+                        }`}
+                        onClick={g.onOpen && !r.missing ? () => g.onOpen!(r.path) : undefined}
+                        title={g.onOpen && !r.missing ? `${r.path}(点击重新打开)` : r.path}
+                      >
                         <div className="flex items-center gap-1.5 text-xs">
                           <span className="truncate">{baseName(r.path)}</span>
                           {r.missing && (

@@ -1,6 +1,6 @@
 # Observer
 
-一个"预览尽可能多种类文件"的桌面应用(形态参考 macOS Quick Look / PowerToys Peek),支持宫格多文件同时预览。当前版本覆盖**原生图片、文本/代码/Markdown、原生音视频**的快速预览;更多格式(RAW/HEIC/PSD、3D、Lottie/PDF、格式转换等)按里程碑逐步接入,见 [task.md](task.md)。
+一个"预览尽可能多种类文件"的桌面应用(形态参考 macOS Quick Look / PowerToys Peek),支持宫格多文件同时预览。当前版本覆盖**图片(原生 + TIFF/PSD/RAW/HEIC 解码)、文本/代码/Markdown、音视频(原生 + FFmpeg 流式)、Lottie、PDF、电子表格**的快速预览;更多格式(3D、格式转换等)按里程碑逐步接入,见 [task.md](task.md)。
 
 > 设计文档:[docs/design.md](docs/design.md)(技术架构)· [docs/layout.md](docs/layout.md)(界面交互)· [docs/method.md](docs/method.md)(格式→库 映射)
 
@@ -95,7 +95,10 @@ observer-tauri/target/release/bundle/{nsis,msi}/
 - 六区可调布局(文件树 / 预览宫格 / 文件信息 / 功能条 / 格式转换占位 / 顶栏)
 - 宫格:m×n(最大 9×9)选择器、选中/关闭/单格展示、格间拖拽、OS 拖入、缩容保留左上子矩阵、**占满覆盖策略(选中/第一格/依次)**、**标题栏刷新重读**
 - 预览:原生图片(滚轮缩放+拖拽平移)、文本/代码/Markdown(高亮+渲染,**行号/自动换行/复制全文/Ctrl+滚轮调字号**)、原生音视频(自制控制条)
+- 文件树:树形展开/折叠 + 虚拟滚动;文件行按类别显示细致图标(图片/视频/音频/表格/文档…分色)
 - **FFmpeg 视频管道(M1)**:mkv/ts/mov/wmv/flv/avi/hevc 等经 loopback HTTP 流式预览(remux 优先,否则实时转码 H.264+AAC),seek 改 `-ss` 重启;B 站 `video.m4s+audio.m4s` 双输入合并;ffprobe 元信息填充文件信息框
+- **图片解码(M2)**:tiff/tga/exr/dds/qoi/hdr/psd(image/psd crate)+ RAW(cr2/nef/arw/dng 等,rawler 纯 Rust)+ HEIC/HEIF(heic crate)→ 磁盘缓存 PNG 预览;图片 EXIF 摘要/色彩空间(exifr)
+- **音频进阶(M3)**:ape/wv/tta/wma/aiff/dsf 等经 loopback 流式预览(FFmpeg 转 AAC fMP4);音频波形可视化(FFmpeg 抽 PCM 峰值 → canvas,点击/拖动 seek);MIDI 经 rustysynth SoundFont 合成 → WAV 原生播放(需用户提供 .sf2)
 - 功能条按类型切换;在资源管理器显示、复制路径可用;**三处右键菜单(资源管理器打开/复制路径)**;打开的文件列表可单格关闭;全界面/全屏显示(Esc/F11 退出)
 - 格式识别:扩展名初筛 + 魔数嗅探(ftyp/RIFF/OggS/fLaC/Lottie 五件套等)
 - 文件信息框:名称/格式/大小/修改时间/可复制路径/图片分辨率/**视频音频 ffprobe 元信息**

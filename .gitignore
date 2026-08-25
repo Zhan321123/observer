@@ -11,6 +11,7 @@ observer-tauri/gen/schemas/
 
 # ===== Claude Code =====
 .claude/
+.codegraph/
 
 # ===== 操作系统 =====
 .DS_Store

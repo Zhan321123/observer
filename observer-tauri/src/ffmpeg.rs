@@ -275,7 +275,9 @@ fn build_ffmpeg(path: &Path, seek: f64, meta: &VideoMeta) -> Result<(Command, &'
         "-f", "mp4",
         "pipe:1",
     ]);
-    Ok((cmd, "video/mp4"))
+    // 音频流式(M3,ape/dsf 等)无视频流 → audio/mp4;<audio> 元素据实解析 AAC 音轨
+    let content_type = if meta.video_codec.is_some() { "video/mp4" } else { "audio/mp4" };
+    Ok((cmd, content_type))
 }
 
 // ---------- loopback 流式 HTTP 服务 ----------
@@ -488,6 +490,60 @@ pub fn video_thumbnail(
     }
 }
 
+// ---------- 音频波形(M3,method.md §4) ----------
+
+/// 抽取音频 PCM 峰值用于前端 canvas 波形(method.md §4)。
+/// ffmpeg 解码 → 单声道 s16(降采样 8kHz 控内存)→ 分桶取 [min,max] 峰值(归一化 -1..1)。
+/// 整个 PCM 一次性读进内存(8kHz 单声道约 16KB/s,常规歌曲数 MB,可接受;GiB 级播客另议)。
+#[tauri::command]
+pub fn audio_waveform(path: String, buckets: Option<usize>) -> Result<Vec<[f32; 2]>, String> {
+    let buckets = buckets.unwrap_or(1000).clamp(64, 4096);
+    let output = Command::new(ffmpeg_path()?)
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            &path,
+            "-vn", // 丢弃视频流
+            "-ac",
+            "1", // 单声道
+            "-ar",
+            "8000", // 8kHz 采样(波形足够,内存可控)
+            "-f",
+            "s16le",
+            "-acodec",
+            "pcm_s16le",
+            "pipe:1",
+        ])
+        .output()
+        .map_err(|e| format!("ffmpeg 运行失败: {e}"))?;
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("音频解码失败: {}", err.trim()));
+    }
+    let pcm = output.stdout;
+    let n = pcm.len() / 2;
+    if n == 0 {
+        return Err("无音频样本(可能不是音频文件或已损坏)".to_string());
+    }
+    // 分桶:每桶取 min/max,供 canvas 画上下包络
+    let mut peaks = vec![[0f32, 0f32]; buckets];
+    for (i, peak) in peaks.iter_mut().enumerate() {
+        let start = i * n / buckets;
+        let end = (((i + 1) * n / buckets).max(start + 1)).min(n);
+        let mut mn = i16::MAX;
+        let mut mx = i16::MIN;
+        for c in pcm[start * 2..end * 2].chunks_exact(2) {
+            let s = i16::from_le_bytes([c[0], c[1]]);
+            mn = mn.min(s);
+            mx = mx.max(s);
+        }
+        *peak = [mn as f32 / 32768.0, mx as f32 / 32768.0];
+    }
+    Ok(peaks)
+}
+
 // ---------- 测试(端到端冒烟:真起服务、真 remux、校验 fMP4 流) ----------
 
 #[cfg(test)]
@@ -576,6 +632,38 @@ mod tests {
         assert!(is_remuxable(&meta), "h264+aac 应判为可 remux");
     }
 
+    /// 波形峰值(M3):ffmpeg 造一段正弦 WAV,验证分桶数量、峰值归一化范围与非零包络。
+    #[test]
+    fn waveform_peaks_normalized_and_nonempty() {
+        let wav = std::env::temp_dir().join("observer_wave_test.wav");
+        let status = Command::new(ffmpeg_path().expect("ffmpeg"))
+            .args([
+                "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            ])
+            .arg(&wav)
+            .status()
+            .expect("spawn ffmpeg");
+        assert!(status.success(), "生成测试 wav 失败");
+
+        let peaks = audio_waveform(wav.to_string_lossy().into_owned(), Some(500)).expect("waveform");
+        assert_eq!(peaks.len(), 500, "应按 buckets 分桶");
+        let max_peak = peaks.iter().map(|p| p[1]).fold(0f32, f32::max);
+        let min_peak = peaks.iter().map(|p| p[0]).fold(0f32, f32::min);
+        // ffmpeg sine 实际输出 ±4095(≈0.125 满幅),峰值应清晰非零且上下对称
+        assert!(max_peak > 0.05, "正峰应非零,实际 {max_peak}");
+        assert!(min_peak < -0.05, "负峰应非零,实际 {min_peak}");
+        assert!(
+            (max_peak + min_peak).abs() < 0.05,
+            "正弦上下包络应基本对称,max {max_peak} min {min_peak}"
+        );
+        assert!(
+            peaks.iter().all(|p| p[0] >= -1.0 && p[1] <= 1.0),
+            "峰值应归一化到 ±1"
+        );
+        std::fs::remove_file(&wav).ok();
+    }
+
     #[test]
     fn stream_server_serves_fmp4() {
         let input = make_test_mkv();
@@ -610,5 +698,55 @@ mod tests {
             buf.len()
         );
         assert!(buf.len() > 1024, "流应有实际媒体数据,仅 {} 字节", buf.len());
+    }
+
+    /// 音频流式(M3):纯音频文件(ape/dsf/wma 类)经 /stream 转码为 AAC fMP4,
+    /// Content-Type 应为 audio/mp4,流体含 ftyp。用 flac 代表(ffmpeg 必支持)。
+    #[test]
+    fn stream_server_serves_audio_fmp4() {
+        let flac = std::env::temp_dir().join("observer_audio_stream_test.flac");
+        let status = Command::new(ffmpeg_path().expect("ffmpeg"))
+            .args([
+                "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:a", "flac",
+            ])
+            .arg(&flac)
+            .status()
+            .expect("spawn ffmpeg");
+        assert!(status.success(), "生成测试 flac 失败");
+
+        let port = start_stream_server().expect("start server");
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        let req = format!(
+            "GET /stream?path={}&t=0 HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+            encode(&flac)
+        );
+        stream.write_all(req.as_bytes()).unwrap();
+
+        // 先取响应头(到 \r\n\r\n),再读到 ftyp
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 8192];
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline {
+            match stream.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    buf.extend_from_slice(&chunk[..n]);
+                    if buf.windows(4).any(|w| w == b"ftyp") {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        let head = String::from_utf8_lossy(&buf);
+        assert!(head.contains("audio/mp4"), "纯音频流应为 audio/mp4,头: {head}");
+        assert!(
+            buf.windows(4).any(|w| w == b"ftyp"),
+            "音频流响应应包含 fMP4 的 ftyp box,实际 {} 字节",
+            buf.len()
+        );
+        std::fs::remove_file(&flac).ok();
     }
 }

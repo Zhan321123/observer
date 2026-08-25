@@ -3,6 +3,7 @@ import { Copy } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
 import { useCellViewStore } from "../stores/cellViewStore";
 import { fileStat, detectFormat, assetUrl, copyPath, ffprobeMeta } from "../lib/tauri";
+import { readExif, type ExifSummary } from "../lib/exif";
 import { formatBytes, formatDateTime, formatTime } from "../lib/format";
 import type { FileStat, DetectResult, VideoMeta } from "../types/file";
 
@@ -25,6 +26,8 @@ export function FileInfoPanel() {
   const [detect, setDetect] = useState<DetectResult | null>(null);
   const [imgRes, setImgRes] = useState<string | null>(null);
   const [meta, setMeta] = useState<VideoMeta | null>(null);
+  const [exif, setExif] = useState<ExifSummary | null>(null);
+  const [exifLoaded, setExifLoaded] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -32,6 +35,8 @@ export function FileInfoPanel() {
     setDetect(null);
     setImgRes(null);
     setMeta(null);
+    setExif(null);
+    setExifLoaded(false);
     if (!file) return;
     let cancelled = false;
     fileStat(file.path).then((s) => !cancelled && setStat(s)).catch(() => {});
@@ -41,6 +46,15 @@ export function FileInfoPanel() {
       img.onload = () => !cancelled && setImgRes(`${img.naturalWidth} × ${img.naturalHeight}`);
       img.onerror = () => {};
       img.src = assetUrl(file.path);
+      // EXIF 摘要 / 色彩空间(M2):读原文件字节解析,失败/无 EXIF → exif=null
+      readExif(assetUrl(file.path))
+        .then((e) => {
+          if (!cancelled) {
+            setExif(e);
+            setExifLoaded(true);
+          }
+        })
+        .catch(() => !cancelled && setExifLoaded(true));
     }
     if (file.kind === "video" || file.kind === "audio") {
       ffprobeMeta(file.path).then((m) => !cancelled && setMeta(m)).catch(() => {});
@@ -96,7 +110,17 @@ export function FileInfoPanel() {
       {copied && <div className="text-[11px] text-brand-bright">已复制路径</div>}
 
       {file.kind === "image" && imgRes && <Row label="分辨率">{imgRes}</Row>}
-      {file.kind === "image" && <Row label="色彩/EXIF"><span className="text-text-dim/60">后续提供</span></Row>}
+      {/* EXIF 摘要 / 色彩空间(M2):有则逐项显示,无则提示;解析中不闪占位 */}
+      {file.kind === "image" && exifLoaded && (
+        <>
+          {exif?.camera && <Row label="相机">{exif.camera}</Row>}
+          {exif?.lens && <Row label="镜头">{exif.lens}</Row>}
+          {exif?.exposure && <Row label="曝光">{exif.exposure}</Row>}
+          {exif?.colorSpace && <Row label="色彩空间">{exif.colorSpace}</Row>}
+          {exif?.takenAt && <Row label="拍摄时间">{formatDateTime(exif.takenAt)}</Row>}
+          {!exif && <Row label="EXIF"><span className="text-text-dim/60">无 EXIF 信息</span></Row>}
+        </>
+      )}
 
       {/* 视频/音频元信息(ffprobe,M1) */}
       {(file.kind === "video" || file.kind === "audio") && (

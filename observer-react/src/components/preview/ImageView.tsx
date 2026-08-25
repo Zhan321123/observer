@@ -25,6 +25,8 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const [tf, setTf] = useState<Tf>({ x: 0, y: 0, s: 1 });
   const [loaded, setLoaded] = useState(false);
+  /** 图片自然尺寸(边界描边定位用,§交互修正-图片边界) */
+  const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
 
   const setView = useCellViewStore((s) => s.setView);
   const fitMode = useCellViewStore((s) => s.views[cellId]?.fitMode) as FitMode | undefined;
@@ -143,8 +145,12 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
     return () => ro.disconnect();
   }, [loaded, mode, applyFit]);
 
-  // 滚轮缩放(非 passive,才能 preventDefault 阻止滚动)——以鼠标为中心
+  // 滚轮缩放(非 passive,才能 preventDefault 阻止滚动)——以鼠标为中心。
+  // 依赖 showSvgText(§交互修正-SVG 源码滚轮):切到源码模式时 React 复用同一容器 DOM,
+  // 旧 wheel 监听若不摘会 preventDefault 挡住文本滚动并误触图片缩放;源码模式下不挂监听,
+  // 恢复文本滚动;切回预览时本 effect 重跑再挂上。
   useEffect(() => {
+    if (showSvgText) return; // 源码模式:不缩放,让文本正常滚动
     const c = containerRef.current;
     if (!c) return;
     const onWheel = (e: WheelEvent) => {
@@ -167,7 +173,7 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
     };
     c.addEventListener("wheel", onWheel, { passive: false });
     return () => c.removeEventListener("wheel", onWheel);
-  }, [active, cellId, setView]);
+  }, [active, cellId, setView, showSvgText]);
 
   // 缩放/平移时同步到 store(供功能条缩放条显示;imgX/Y/S 为全屏切换的瞬态接力)
   useEffect(() => {
@@ -284,7 +290,11 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
         src={overrideSrc ?? assetUrl(file.path)}
         alt={file.name}
         draggable={false}
-        onLoad={() => setLoaded(true)}
+        onLoad={() => {
+          setLoaded(true);
+          const im = imgRef.current;
+          if (im && im.naturalWidth) setNat({ w: im.naturalWidth, h: im.naturalHeight });
+        }}
         onError={() => setView(cellId, { error: "无法加载图片(文件损坏或格式异常)" })}
         className="pointer-events-none absolute select-none"
         style={{
@@ -294,6 +304,21 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
           maxHeight: "none",
         }}
       />
+      {/* 图片边界描边(§交互修正-图片边界):随 transform 走的 1px 双色环,透明/小图缩放平移后可辨边界。
+          用独立 overlay(自身不带 transform)按图片屏幕矩形定位,border 恒为屏幕 1px,不随倍率变粗。 */}
+      {loaded && nat && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute"
+          style={{
+            left: tf.x,
+            top: tf.y,
+            width: nat.w * tf.s,
+            height: nat.h * tf.s,
+            boxShadow: "0 0 0 1px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.4)",
+          }}
+        />
+      )}
     </div>
   );
 }
