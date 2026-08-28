@@ -2,21 +2,8 @@
 
 > 承接 [task.md](task.md)(未完成里程碑)之外的新格式候选,按接入成本分档。每项标注:文件类型说明、接入管道(native 前端库 / decode-rust / ffmpeg-stream / archive 双身份容器)、推荐库。架构不变:加一个格式 = 加一个 handler 文件 + registry.ts 登记一行(design.md §5②)。
 
-## 一、零成本(仅改 exts 数组,底层库已支持)✅ 已完成
-
-- [x] **apng**(动画 PNG)— Chromium 原生支持,加进 image handler 的 NATIVE 数组即可
-- [x] **amr / ac3 / dts / caf / aifc / voc / w64**(电话录音 / DVD 音轨 / DTS 音轨 / Core Audio / 古早音频容器)— FFmpeg 全能解码,加进 audio handler 的 STREAM 数组,走现有 loopback 流式管道
-- [x] **mka / ogm**(Matroska 纯音频 / Ogg 视频)— mkv/ogg 容器的变体,FFmpeg 管道直接吃
-- [x] **更多 RAW**:pef(宾得)/ srw(三星)/ x3f(适马 Foveon)/ iiq(飞思)— rawler 已支持这些机型,只是扩展名未登记
-- [x] **pages / numbers / key**(Apple iWork 文档/表格/幻灯,实为 zip 容器)— 加进 archive handler exts,先有压缩包目录树
-- [x] **svgz**(gzip 压缩的 SVG)— 解 gzip 后走现有 svg 管道
-
 ## 二、低成本高价值(纯前端库,走 native 策略)
 
-- [x] **字体 ttf/otf/woff/woff2/ttc**(TrueType/OpenType 字体包 / Web 字体 / 字体集合)— FontFace 样张 + 试字输入 + opentype.js 字形表(96/页小翻页);woff2/ttc 无字形表降级提示,ttc 仅首个
-- [x] **SQLite .db/.sqlite**(单文件数据库,应用本地存储常见格式)— rusqlite 只读(已有依赖):表/视图下拉 + 分页浏览 + 结构(DDL)面板;WAL 库走 query_only 回退;BLOB 出占位符(字节不走 IPC)
-- [x] **DOCX 渲染**(Word 文档,zip 容器)— docx-preview 页面流;功能条"文档/压缩包目录"双身份切换(复刻 xlsxMode 先例);滚动位置持久化
-- [x] **PPTX 渲染**(PowerPoint,zip 容器)— pptx-browser(MIT/零依赖)幻灯片页面流,IntersectionObserver 懒渲染控内存;图表/SmartArt 为占位框;Office→Google Fonts 在线映射(离线回退系统字体)
 - [ ] **EPUB 渲染**(电子书,zip 容器)— epub.js 阅读器;双身份切换"目录树/阅读器"
 - [ ] **Hex 视图(兜底)**(任意未知二进制)— 十六进制 + ASCII 对照预览;Quick Look 都没有的差异化功能,前端或 Rust 均可
 - [ ] **字幕 srt/vtt/ass**(影视字幕:SubRip / WebVTT / Advanced SubStation Alpha)— 前端解析时间轴 + 文本列表;ass 可用 libass-wasm 真渲染样式特效

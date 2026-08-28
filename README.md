@@ -2,19 +2,19 @@
 
 一个"预览尽可能多种类文件"的桌面应用(形态参考 macOS Quick Look / PowerToys Peek),支持宫格多文件同时预览。当前版本覆盖**图片(原生 + TIFF/PSD/RAW/HEIC 解码)、文本/代码/Markdown、音视频(原生 + FFmpeg 流式)、Lottie/dotLottie/Rive/SVGA、PDF、电子表格、3D 模型、压缩包目录树(zip/RAR/7z)**的快速预览;更多格式(格式转换等)按里程碑逐步接入,见 [task.md](task.md)。
 
-> 设计文档:[docs/design.md](docs/design.md)(技术架构)· [docs/layout.md](docs/layout.md)(界面交互)· [docs/method.md](docs/method.md)(格式→库 映射)
+> 设计文档:[docs/design.md](docs/design.md)(设计理念)· [docs/framework.md](docs/framework.md)(框架选型与铁律限制)· [docs/layout.md](docs/layout.md)(布局与功能)· [docs/method.md](docs/method.md)(格式→库 映射)
 
 ## 技术栈
 
 - **后端 / 壳**:Tauri 2(Rust)+ 系统 WebView
 - **前端**:Vite + React 19 + TypeScript + Tailwind CSS v4 + zustand + react-resizable-panels v4
-- **关键铁律**:媒体字节走 `asset://` 协议(`convertFileSrc`),不走 invoke IPC;IPC 只传元数据/文本。格式路由采用注册表,加一个格式 = 加一个 handler 文件。
+- **关键铁律**(详见 [framework.md](docs/framework.md) §2):媒体字节走 `asset://` 协议(`convertFileSrc`),不走 invoke IPC;IPC 只传元数据/文本。格式路由采用注册表,加一个格式 = 加一个 handler 文件。
 
 ## 目录结构
 
 ```
 observer/
-├── docs/                设计文档(design / layout / method)
+├── docs/                设计文档(design 设计理念 / framework 框架与铁律 / layout 布局与功能 / method 格式方法)
 ├── observer.png         logo 源文件
 ├── observer-react/      前端(Vite + React)
 │   └── src/
