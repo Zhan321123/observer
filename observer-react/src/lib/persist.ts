@@ -91,6 +91,14 @@ export const docPosClear = () => invoke<void>("doc_pos_clear");
 export const threedList = () => invoke<ThreeDRow[]>("threed_list");
 export const threedRemove = (path: string) => invoke<void>("threed_remove", { path });
 export const threedClear = () => invoke<void>("threed_clear");
+// ---- archive_password(压缩包密码,task2 §4;列表不含明文,只显路径与时间) ----
+export interface ArchivePwdRow {
+  path: string;
+  updated_at: number;
+}
+export const archivePwdList = () => invoke<ArchivePwdRow[]>("archive_pwd_list");
+export const archivePwdRemove = (path: string) => invoke<void>("archive_pwd_remove", { path });
+export const archivePwdClear = () => invoke<void>("archive_pwd_clear");
 /** 一键清理失效(文件已不存在)历史,返回删除条数 */
 export const historyPurgeMissing = () => invoke<number>("history_purge_missing");
 /** 保留策略:仅保留最近打开的 limit 条历史,返回删除条数 */

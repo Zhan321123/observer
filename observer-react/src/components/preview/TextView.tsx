@@ -41,6 +41,7 @@ export function TextView({ file, cellId, active }: PreviewProps) {
   const [confirmed, setConfirmed] = useState(false); // 大文件已确认打开
   const scrollRef = useRef<HTMLDivElement>(null);
   const lottieRef = useRef<HTMLDivElement>(null);
+  const animRef = useRef<ReturnType<typeof lottie.loadAnimation> | null>(null); // 点击播放/暂停用
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 卸载时 React 会先置空 scrollRef,故用 posRef 记最新滚动/字号供保存
   const posRef = useRef({ x: 0, y: 0, fontSize: 13 });
@@ -125,11 +126,17 @@ export function TextView({ file, cellId, active }: PreviewProps) {
         loop: true,
         autoplay: true,
         animationData: JSON.parse(text),
+        // best-fit:svg 撑满容器后按宽高比等比缩放、居中(task.md 交互修正)
+        rendererSettings: { preserveAspectRatio: "xMidYMid meet" },
       });
+      animRef.current = anim;
     } catch {
       setView(cellId, { error: "Lottie JSON 解析失败" });
     }
-    return () => anim?.destroy();
+    return () => {
+      animRef.current = null;
+      anim?.destroy();
+    };
   }, [showLottie, text, cellId, setView]);
 
   // 文本载入后恢复上次的滚动位置与字号(doc_position)
@@ -218,6 +225,16 @@ export function TextView({ file, cellId, active }: PreviewProps) {
     schedulePersist();
   }, [fontSize, lineNumbers, wordWrap, mdMode, lottieMode, csvMode, cellId, setView, schedulePersist]);
 
+  // Lottie 动画:点击(已选中时)= 播放/暂停(§4.5,与 dotLottie/Rive/SVGA 一致;
+  // 未选中格的点击被 GridCell capture 拦截,不到这里)
+  const onLottieClick = () => {
+    if (!active) return;
+    const a = animRef.current;
+    if (!a) return;
+    if (a.isPaused) a.play();
+    else a.pause();
+  };
+
   // markdown 链接分流:本地文件 → 宫格打开;http(s) 外链 → 系统浏览器
   const onMdClick = (e: React.MouseEvent) => {
     const a = (e.target as HTMLElement).closest("a");
@@ -271,9 +288,16 @@ export function TextView({ file, cellId, active }: PreviewProps) {
       style={{ userSelect: "text" }}
     >
       {showLottie ? (
-        // Lottie 动画模式
-        <div className="flex h-full w-full items-center justify-center overflow-hidden p-4">
-          <div ref={lottieRef} className="max-h-full max-w-full" />
+        // Lottie 动画模式:best-fit 居中适配宫格(task.md 交互修正)——容器撑满格,
+        // svg 经 [&>svg] 强制 100%(lottie-web 默认把 svg 定死为 JSON 的 w/h 像素),
+        // 由 viewBox + preserveAspectRatio="xMidYMid meet" 完成等比缩放居中;
+        // 点击(已选中时)= 播放/暂停
+        <div
+          className="flex h-full w-full overflow-hidden p-4"
+          style={{ cursor: active ? "pointer" : "default" }}
+          onClick={onLottieClick}
+        >
+          <div ref={lottieRef} className="h-full w-full [&>svg]:h-full [&>svg]:w-full" />
         </div>
       ) : showMd ? (
         // markdown 预览模式(链接点击分流)

@@ -36,6 +36,11 @@ pub fn kind_for_ext(ext: &str) -> &'static str {
         // 动效(M4:dotLottie / Rive / SVGA;Lottie 的 .json 走 text 嗅探)
         "lottie" | "riv" | "svga" => "anim",
 
+        // 压缩包(task2):目录树预览。docx/pptx/jar/epub 无原生预览,默认即压缩包目录;
+        // xlsx/xlsm 本质也是 zip 容器但保持 spreadsheet(默认路由),"压缩包目录"只是
+        // 功能条的附加视角;.7z.001 等分卷不加(走 unknown→魔数嗅探,首卷给占位提示)。
+        "zip" | "rar" | "7z" | "jar" | "epub" | "docx" | "pptx" => "archive",
+
         "txt" | "json" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "rs" | "py" | "css"
         | "scss" | "less" | "html" | "htm" | "xml" | "yml" | "yaml" | "toml" | "ini" | "conf"
         | "cfg" | "log" | "csv" | "tsv" | "c" | "h" | "cpp" | "cc" | "hpp" | "cs" | "java"
@@ -56,6 +61,10 @@ pub fn kind_for_sniff(sniff: &str, fallback: &str) -> &'static str {
         "lottie" | "json" | "text" => "text",
         // PDF(第三批:pdf.js 渲染)
         "pdf" => "pdf",
+        // 压缩包(task2):魔数/容器细分结果。xlsx 容器保持 spreadsheet(默认路由),
+        // 伪装成 .bin 的 xlsx 也会被纠正到表格;jar/epub/docx/pptx → archive。
+        "zip" | "rar4" | "rar5" | "7z" | "jar" | "epub" | "docx" | "pptx" => "archive",
+        "xlsx" => "spreadsheet",
         _ => match fallback {
             "image" => "image",
             "video" => "video",
@@ -65,6 +74,7 @@ pub fn kind_for_sniff(sniff: &str, fallback: &str) -> &'static str {
             "pdf" => "pdf",
             "threed" => "threed",
             "anim" => "anim",
+            "archive" => "archive",
             "text" => "text",
             _ => "unknown",
         },
@@ -137,6 +147,21 @@ pub fn sniff(path: &Path) -> Option<&'static str> {
         return Some("webm");
     }
 
+    // 压缩包(task2 §2 魔数表):zip(空包可能只有 EOCD)/ RAR4 / RAR5 / 7z。
+    // 须在文本嗅探之前——"7z\xBC\xAF" 前两字节是可打印 ASCII,会被 sniff_text 误吞。
+    if n >= 4 && (&b[0..4] == b"PK\x03\x04" || &b[0..4] == b"PK\x05\x06") {
+        return Some("zip");
+    }
+    if n >= 7 && &b[0..7] == b"Rar!\x1A\x07\x00" {
+        return Some("rar4");
+    }
+    if n >= 8 && &b[0..8] == b"Rar!\x1A\x07\x01\x00" {
+        return Some("rar5");
+    }
+    if n >= 6 && &b[0..6] == b"7z\xBC\xAF\x27\x1C" {
+        return Some("7z");
+    }
+
     // Lottie 嗅探:JSON 且含 v/fr/ip/op/layers 五件套(method.md §2)
     if let Some(text) = sniff_text(b) {
         if looks_like_lottie(text) {
@@ -193,6 +218,31 @@ mod tests {
         assert_eq!(kind_for_ext("pdf"), "pdf");
         assert_eq!(kind_for_ext("json"), "text"); // Lottie 的 .json 仍走 text 嗅探
         assert_eq!(kind_for_ext("xyz"), "unknown");
+    }
+
+    /// 压缩包扩展名(task2):archive 类;xlsx 保持 spreadsheet(默认路由)。
+    #[test]
+    fn kind_for_ext_covers_archive() {
+        for e in ["zip", "rar", "7z", "jar", "epub", "docx", "pptx"] {
+            assert_eq!(kind_for_ext(e), "archive", "ext {e} 应为 archive");
+        }
+        // 双身份:xlsx 本质是 zip 容器,但默认仍是表格("压缩包目录"只是功能条附加视角)
+        assert_eq!(kind_for_ext("xlsx"), "spreadsheet");
+        assert_eq!(kind_for_ext("xlsm"), "spreadsheet");
+        // 分卷扩展名不进 archive(走 unknown→魔数嗅探)
+        assert_eq!(kind_for_ext("001"), "unknown");
+        assert_eq!(kind_for_ext("z01"), "unknown");
+    }
+
+    /// 压缩包嗅探结果 → kind(魔数命中;xlsx 容器细分纠正回 spreadsheet)。
+    #[test]
+    fn kind_for_sniff_archive() {
+        for s in ["zip", "rar4", "rar5", "7z", "jar", "epub", "docx", "pptx"] {
+            assert_eq!(kind_for_sniff(s, "unknown"), "archive", "嗅探 {s} 应为 archive");
+        }
+        assert_eq!(kind_for_sniff("xlsx", "archive"), "spreadsheet");
+        // fallback 透传:ext 已判 archive、嗅探不认识时保留 archive
+        assert_eq!(kind_for_sniff("something-else", "archive"), "archive");
     }
 
     /// kind_for_sniff 的 fallback 透传新类别(未命中嗅探时保留 ext 判断)。

@@ -37,6 +37,8 @@ export interface CellControl {
   setIcoSize?(i: number): void;
   /** xlsx:选择 sheet 下标 */
   setSheet?(i: number): void;
+  /** xlsx 双身份(task2 §5):表格/压缩包目录视角切换 */
+  toggleXlsxMode?(): void;
   /** 含透明图层图片:透明棋盘格背景开关 */
   toggleTransparencyGrid?(): void;
   /** CSV/TSV:表格/文本模式切换 */

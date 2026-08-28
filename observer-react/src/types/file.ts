@@ -10,6 +10,7 @@ export type FileKind =
   | "pdf"
   | "threed"
   | "anim"
+  | "archive"
   | "unknown";
 
 /** list_dir 返回的目录项 */

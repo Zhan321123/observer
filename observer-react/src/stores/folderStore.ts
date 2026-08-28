@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { desktopDir } from "@tauri-apps/api/path";
 import { listDir, allowAssetPath } from "../lib/tauri";
 import { isPreviewableExt } from "../formats/registry";
+import { isSplitTail, isSplitFirstVolume } from "../lib/archiveVol";
 import type { DirEntry } from "../types/file";
 
 export interface TreeNode {
@@ -13,8 +14,15 @@ export interface TreeNode {
 
 const toNode = (e: DirEntry): TreeNode => ({ entry: e, children: null, expanded: false });
 
-/** 内容列表规则(§3.3):保留所有文件夹;文件只显示可预览的 */
-const visible = (list: DirEntry[]) => list.filter((e) => e.is_dir || isPreviewableExt(e.ext));
+/** 内容列表规则(§3.3):保留所有文件夹;文件只显示可预览的。
+ *  分卷压缩(task2 §6):尾卷(.part2.rar 等)当不可预览隐藏,避免误开半个包;
+ *  首卷(.part1.rar/.7z.001)放行,预览时给"暂不支持"占位。 */
+const visible = (list: DirEntry[]) =>
+  list.filter(
+    (e) =>
+      e.is_dir ||
+      (!isSplitTail(e.name) && (isPreviewableExt(e.ext) || isSplitFirstVolume(e.name)))
+  );
 
 interface FolderState {
   rootPath: string;

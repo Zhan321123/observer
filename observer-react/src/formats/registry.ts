@@ -5,6 +5,7 @@ import { videoHandler } from "./handlers/video";
 import { audioHandler } from "./handlers/audio";
 import { markdownHandler } from "./handlers/markdown";
 import { spreadsheetHandler } from "./handlers/spreadsheet";
+import { archiveHandler } from "./handlers/archive";
 import { pdfHandler } from "./handlers/pdf";
 import { threedHandler } from "./handlers/threed";
 import { animHandler } from "./handlers/anim";
@@ -21,6 +22,7 @@ const handlers: FormatHandler[] = [
   audioHandler,
   markdownHandler,
   spreadsheetHandler,
+  archiveHandler,
   pdfHandler,
   threedHandler,
   animHandler,

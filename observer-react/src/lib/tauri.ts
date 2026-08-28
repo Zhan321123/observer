@@ -42,3 +42,35 @@ export const audioWaveform = (path: string, buckets?: number) =>
 /** MIDI:rustysynth SoundFont 合成 → WAV 磁盘缓存,返回路径(前端经 asset:// 原生播放) */
 export const midiRender = (path: string, soundfont?: string) =>
   invoke<string>("midi_render", { path, soundfont });
+
+// ---- task2 压缩包目录预览 ----
+/** 压缩包条目元数据(archive_list 返回;只读中央目录/头,不解压数据) */
+export interface ArchiveEntry {
+  /** 包内相对路径,'/' 分隔 */
+  path: string;
+  name: string;
+  is_dir: boolean;
+  size: number;
+  /** unix 秒;0 = 无值 */
+  mtime: number;
+  encrypted: boolean;
+}
+
+/** archive_list 的结构化错误(本代码库第一个结构化命令错误):kind 判别类别。
+ *  header_encrypted / wrong_password → 密码框视图;其余 → 宫格错误占位。 */
+export type ArchiveErr =
+  | { kind: "header_encrypted" }
+  | { kind: "wrong_password" }
+  | { kind: "corrupted"; message: string }
+  | { kind: "unsupported"; message: string }
+  | { kind: "io"; message: string }
+  | { kind: "not_archive"; message: string };
+
+/** 列压缩包目录(zip/rar/7z)。pwd 仅头加密包(rar -hp / 7z -mhe=on)需要 */
+export const archiveList = (path: string, pwd?: string | null) =>
+  invoke<ArchiveEntry[]>("archive_list", { path, pwd: pwd ?? null });
+/** 已记住的压缩包密码(按绝对路径;task2 §4 明文存 SQLite) */
+export const archivePwdGet = (path: string) =>
+  invoke<string | null>("archive_pwd_get", { path });
+export const archivePwdSet = (path: string, pwd: string) =>
+  invoke<void>("archive_pwd_set", { path, pwd });

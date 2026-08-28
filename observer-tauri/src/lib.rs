@@ -1,3 +1,4 @@
+mod archive;
 mod audiox;
 mod commands;
 mod db;
@@ -68,6 +69,12 @@ pub fn run() {
             ffmpeg::audio_waveform,
             imgdec::decode_image,
             audiox::midi_render,
+            archive::archive_list,
+            db::archive_pwd_get,
+            db::archive_pwd_set,
+            db::archive_pwd_remove,
+            db::archive_pwd_clear,
+            db::archive_pwd_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

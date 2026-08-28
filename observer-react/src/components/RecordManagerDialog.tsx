@@ -5,7 +5,8 @@ import {
   mediaPosList, mediaPosRemove, mediaPosClear,
   docPosList, docPosRemove, docPosClear,
   threedList, threedRemove, threedClear,
-  type HistoryRow, type MediaPosRow, type DocPosRow, type ThreeDRow,
+  archivePwdList, archivePwdRemove, archivePwdClear,
+  type HistoryRow, type MediaPosRow, type DocPosRow, type ThreeDRow, type ArchivePwdRow,
 } from "../lib/persist";
 import { formatBytes, formatTime, formatDateTime, baseName } from "../lib/format";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -34,8 +35,8 @@ const docSummary = (r: DocPosRow): string => {
 
 /**
  * 记录管理对话框(design.md §9.4,§交互修正-记录管理与历史合并):顶栏「历史」与设置「记录管理」
- * 已合并为这单一对话框/入口。四类本地记录(预览历史/播放位置/文档位置/3D 视角)按类型分组,
- * 支持单条删、勾选多条删、按类型清空、一键清理失效、保留策略(条数上限淘汰最旧);
+ * 已合并为这单一对话框/入口。五类本地记录(预览历史/播放位置/文档位置/3D 视角/压缩包密码 task2)
+ * 按类型分组,支持单条删、勾选多条删、按类型清空、一键清理失效、保留策略(条数上限淘汰最旧);
  * 「预览历史」组保留原历史对话框的点击重开(进首空格,失效灰显不可点)。
  * 全部数据仅存本地;删除 db 文件即恢复出厂。入口:顶栏「历史」、设置 → 记录管理。
  */
@@ -44,6 +45,7 @@ export function RecordManagerDialog({ open, onClose }: Props) {
   const [media, setMedia] = useState<MediaPosRow[] | null>(null);
   const [doc, setDoc] = useState<DocPosRow[] | null>(null);
   const [threed, setThreed] = useState<ThreeDRow[] | null>(null);
+  const [archPwd, setArchPwd] = useState<ArchivePwdRow[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
   const historyRetention = useSettingsStore((s) => s.historyRetention);
@@ -62,16 +64,18 @@ export function RecordManagerDialog({ open, onClose }: Props) {
   );
 
   const reload = useCallback(async () => {
-    const [h, m, d, t] = await Promise.all([
+    const [h, m, d, t, a] = await Promise.all([
       historyList().catch(() => [] as HistoryRow[]),
       mediaPosList().catch(() => [] as MediaPosRow[]),
       docPosList().catch(() => [] as DocPosRow[]),
       threedList().catch(() => [] as ThreeDRow[]),
+      archivePwdList().catch(() => [] as ArchivePwdRow[]),
     ]);
     setHistory(h);
     setMedia(m);
     setDoc(d);
     setThreed(t);
+    setArchPwd(a);
   }, []);
 
   useEffect(() => {
@@ -130,6 +134,13 @@ export function RecordManagerDialog({ open, onClose }: Props) {
       rows: threed?.map((r) => ({ path: r.path, summary: "相机参数", time: r.updated_at })) ?? null,
       remove: threedRemove,
       clear: threedClear,
+    },
+    {
+      id: "archive_pwd",
+      title: "压缩包密码",
+      rows: archPwd?.map((r) => ({ path: r.path, summary: "已记住密码", time: r.updated_at })) ?? null,
+      remove: archivePwdRemove,
+      clear: archivePwdClear,
     },
   ];
 

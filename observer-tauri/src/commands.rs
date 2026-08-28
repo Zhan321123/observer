@@ -190,12 +190,23 @@ pub fn detect_format(path: String) -> Result<DetectResult, String> {
     let ext = ext_of(p);
     let mut kind = formats::kind_for_ext(&ext).to_string();
 
-    // 歧义/空扩展名 → 读文件头嗅探兜底
-    let sniffed = if matches!(ext.as_str(), "" | "json" | "m4s" | "bin" | "dat") || kind == "unknown" {
+    // 歧义/空扩展名/archive 类 → 读文件头嗅探兜底(zip 族不看扩展名下结论:
+    // jar/epub/docx/pptx 靠包内特征条目细分,task2 §2)
+    let mut sniffed = if matches!(ext.as_str(), "" | "json" | "m4s" | "bin" | "dat")
+        || kind == "unknown"
+        || kind == "archive"
+    {
         formats::sniff(p).map(|s| s.to_string())
     } else {
         None
     };
+    // zip 魔数 → 容器细分(task2 §2 表):jar/epub/docx/pptx→archive;xlsx→spreadsheet
+    // (伪装成 .bin 的 xlsx 也会被纠正到表格);普通 zip 维持 "zip"。
+    if sniffed.as_deref() == Some("zip") {
+        if let Some(sub) = crate::archive::classify_zip(p) {
+            sniffed = Some(sub.to_string());
+        }
+    }
     if let Some(s) = &sniffed {
         // 嗅探结果可修正 kind(例如 .json 实为 Lottie → 仍归 text,但上报实际格式)
         kind = formats::kind_for_sniff(s, &kind).to_string();
@@ -264,5 +275,44 @@ mod tests {
         assert_eq!(da.kind, "audio", "纯音频 m4s 应判为 audio,实际 {}", da.kind);
         let dv = detect_format(video.to_string_lossy().to_string()).expect("detect video");
         assert_eq!(dv.kind, "video", "含视频流 m4s 应判为 video,实际 {}", dv.kind);
+    }
+
+    /// task2:zip 族 detect_format 全链路 —— archive 类触发嗅探 + classify_zip 容器细分。
+    #[test]
+    fn detect_format_classifies_zip_containers() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        // name 含扩展名;entries 为 (条目名, 内容)
+        let mk = |name: &str, entries: &[(&str, &str)]| -> String {
+            let p = dir.join(format!("observer_detect_{}_{name}", std::process::id()));
+            let f = fs::File::create(&p).unwrap();
+            let mut w = zip::ZipWriter::new(f);
+            let opt = zip::write::SimpleFileOptions::default();
+            for (n, d) in entries {
+                w.start_file(*n, opt).unwrap();
+                w.write_all(d.as_bytes()).unwrap();
+            }
+            w.finish().unwrap();
+            p.to_string_lossy().to_string()
+        };
+
+        // 普通 zip:ext zip → 嗅探确认,kind archive
+        let d = detect_format(mk("plain.zip", &[("a.txt", "hi")])).unwrap();
+        assert_eq!((d.ext.as_str(), d.kind.as_str()), ("zip", "archive"));
+
+        // jar / docx / epub:细分上报 sniffed,kind archive
+        let d = detect_format(mk("j.jar", &[("META-INF/MANIFEST.MF", "Manifest-Version: 1.0")])).unwrap();
+        assert_eq!((d.sniffed.as_deref(), d.kind.as_str()), (Some("jar"), "archive"));
+        let d = detect_format(mk("w.docx", &[("[Content_Types].xml", "<T/>"), ("word/document.xml", "<d/>")])).unwrap();
+        assert_eq!((d.sniffed.as_deref(), d.kind.as_str()), (Some("docx"), "archive"));
+        let d = detect_format(mk("b.epub", &[("mimetype", "application/epub+zip")])).unwrap();
+        assert_eq!((d.sniffed.as_deref(), d.kind.as_str()), (Some("epub"), "archive"));
+
+        // 伪装成 .bin 的 xlsx:细分 xlsx → 纠正回 spreadsheet(默认路由)
+        let real = mk("x.xlsx", &[("[Content_Types].xml", "<T/>"), ("xl/workbook.xml", "<w/>")]);
+        let bin = dir.join(format!("observer_detect_xlsx_{}.bin", std::process::id()));
+        std::fs::copy(&real, &bin).unwrap();
+        let d = detect_format(bin.to_string_lossy().to_string()).unwrap();
+        assert_eq!((d.ext.as_str(), d.sniffed.as_deref(), d.kind.as_str()), ("bin", Some("xlsx"), "spreadsheet"));
     }
 }

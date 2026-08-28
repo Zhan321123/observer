@@ -23,8 +23,3 @@
 - [ ] 超大文本(GiB 级)一次性读入渲染(现有 10MB 阈值 + 确认门槛,后端 1 GiB 护栏;真正的流式/分块渲染未做)
 - [ ] 平台验证:仅 Windows;macOS(sidecar 需签名公证)、Linux(WebKitGTK 编解码差,design.md §4 暂缓)未做
 - [ ] FFmpeg 随包分发:当前依赖 PATH/环境变量;打包需 externalBin 放置二进制并处理许可(LGPL 解码构建 vs 本机 GPL 含 x264)
-
-## 交互修正(实测反馈)
-
-- [ ] **全窗/全屏底部悬浮工具条**:全界面/全屏(`FullViewOverlay`)显示时,鼠标移到窗口最下方热区 → 浮出功能条(`FunctionBar`,对当前全屏格操作),移离底部后延时自动隐藏;Esc 退出不变。
-- [ ] **Lottie 最佳显示**:lottie(`.json` 嗅探为 lottie,`TextView` 动画模式)像图片一样 best-fit 居中适配宫格。当前容器为 `max-h-full max-w-full`(无确定尺寸),动画可能按原始尺寸渲染而不贴合格子;改为撑满宫格 + `preserveAspectRatio="xMidYMid meet"` 适配。点击(选中时)播放/暂停不变。

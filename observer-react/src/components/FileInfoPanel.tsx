@@ -80,7 +80,8 @@ export function FileInfoPanel() {
 
   const kindLabel: Record<string, string> = {
     image: "图片", video: "视频", audio: "音频", text: "文本", markdown: "Markdown",
-    spreadsheet: "表格", pdf: "PDF", threed: "3D 模型", anim: "动效", unknown: "未知",
+    spreadsheet: "表格", pdf: "PDF", threed: "3D 模型", anim: "动效",
+    archive: "压缩包", unknown: "未知",
   };
 
   const mediaDuration = (file.kind === "video" || file.kind === "audio") ? view?.duration : undefined;

@@ -1,6 +1,6 @@
 # Obverser — 格式方法表（什么格式用什么库/方法）
 
-> 版本：v0.1（2026-08-22）
+> 版本：v0.2（2026-08-28，新增 §9 压缩包）
 > 关联文档：[design.md](design.md)（技术架构）· [layout.md](layout.md)（界面与交互）
 > 本文档是"格式 → 识别方法 → 预览方案 → 库"的单一索引，新增格式时在此登记。
 
@@ -13,6 +13,7 @@
   ├─ 图片   → §5（WebView 原生 / image / rawler / heic / psd / resvg）
   ├─ 3D     → §6（three.js loaders）
   ├─ 动效   → §7（lottie-web / dotlottie / rive / svga）
+  ├─ 压缩包 → §9（zip / unrar / sevenz-rust：只列目录树，不解压）
   └─ 文档/其他 → §7（pdf.js / 高亮 / FontFace）
 ```
 
@@ -21,7 +22,7 @@
 两级识别，**不看扩展名下结论**：
 
 1. **扩展名初筛**：快速路由常见格式
-2. **魔数/结构嗅探**（拿不准时读文件头）：
+2. **魔数/结构嗅探**（拿不准时读文件头；archive 类扩展名必嗅探——jar/epub/docx 靠包内特征条目细分，§9.1）：
 
 | 目标 | 嗅探方法 |
 |---|---|
@@ -29,6 +30,7 @@
 | Lottie 动画 | JSON 解析前部字段：`v + fr + ip + op + layers` 五件套命中 → Lottie，否则走文本 |
 | RIFF/AIFF/Ogg/FLAC 等音频容器 | 各自魔数（`RIFF`/`FORM`/`OggS`/`fLaC`） |
 | dotLottie(.lottie)/3MF/Office | ZIP 魔数 + 内部结构（`.lottie` 含 manifest） |
+| zip / RAR4 / RAR5 / 7z | 魔数 `PK\x03\x04`（空包 `PK\x05\x06`）/ `Rar!\x1A\x07\x00` / `Rar!\x1A\x07\x01\x00` / `7z\xBC\xAF\x27\x1C`；zip 再按包内特征细分容器（§9.1） |
 
 **B 站缓存特例**：同目录成对的 `video.m4s` + `audio.m4s` → FFmpeg 双输入合并（`-i video.m4s -i audio.m4s`），否则单放无声。
 
@@ -101,6 +103,34 @@ WebView WebGL 渲染，与 Electron 零差距。[three.js loaders](https://mcpma
 | 视频/音频 | FFmpeg 命令模板库（与预览同一 sidecar） |
 | 图片 | rawler/image/heic 解码 → image crate 编码（png/jpg/webp/tiff；AVIF 编码用 ravif） |
 | 3D | 前端 three.js exporter（GLB/STL/OBJ/PLY）先行；重量级（FBX→glTF 带动画）上 Rust 侧 assimp（russimp） |
+
+## 9. 压缩包（task2：目录树预览，不解压包内文件）
+
+后端 `archive_list` **只读中央目录/头，不读任何文件数据**（守铁律 2：IPC 只传条目元数据）；
+前端 `ArchiveView` 可折叠树 + 虚拟滚动，文件行点击无动作（与左侧文件树的唯一交互差异）。
+
+### 9.1 格式与容器识别
+
+| 格式 / 容器 | 库 | 判据 |
+|---|---|---|
+| zip | [zip](https://crates.io/crates/zip) crate（`by_index_raw`，不装解密/解压通道） | `PK\x03\x04` / 空包 `PK\x05\x06` |
+| RAR4 / RAR5 | [unrar](https://crates.io/crates/unrar)（unrar-sys 捆绑 UnRAR C++ 源码静态编译） | `Rar!\x1A\x07\x00` / `Rar!\x1A\x07\x01\x00` |
+| 7z | [sevenz-rust](https://crates.io/crates/sevenz-rust)（纯 Rust，`Archive::open` 只解析头） | `7z\xBC\xAF\x27\x1C` |
+| jar（→ archive） | zip 细分 | 包内含 `META-INF/MANIFEST.MF` |
+| xlsx / docx / pptx | zip 细分 | `[Content_Types].xml` + `xl/` / `word/` / `ppt/`（xlsx 保持 spreadsheet 默认路由，§5 双身份切换） |
+| epub（→ archive） | zip 细分 | 首条目 `mimetype` 内容 = `application/epub+zip` |
+
+### 9.2 加密与密码（两种层次，决定弹不弹密码框）
+
+| 加密层次 | 典型场景 | 行为 |
+|---|---|---|
+| 只加密数据 | 带密码的 zip；未勾"加密文件名"的 rar/7z | 照常列目录（zip 中央目录永远明文），加密条目加锁标记，不弹密码框 |
+| 文件头加密 | `rar -hp` / `7z -mhe=on` | 后端返回"头加密"错误类型 → 前端密码框视图；密码按绝对路径明文存 SQLite（`archive_password` 表，记录管理可单删/清空），打开时先自动试已存密码 |
+
+### 9.3 边界（本轮暂缓）
+
+- 分卷压缩（`.partN.rar` / `.7z.NNN` / `.z01`）：文件树隐藏尾卷、首卷给"暂不支持"占位（task2 §6）。
+- 嵌套压缩包、包内文件预览（如图片）、tar 系 / gz / CAB / ISO：后续（单条目解压可复用 M2 PNG 磁盘缓存管道）。
 
 ## 参考资料
 

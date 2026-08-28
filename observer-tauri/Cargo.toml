@@ -32,6 +32,15 @@ rawler = "0.7"
 rustysynth = "1.3"
 hound = "3.5"
 heic = "0.1"
+# task2 压缩包目录预览(method.md §8):只列中央目录/头,default-features=false 裁掉全部
+# 解压编解码器(列目录核心 API 不依赖任何 feature);aes-crypto 按 task2 §7 保留,
+# 供 §8 后续"单条目解压"复用 M2 PNG 磁盘缓存管道(届时才真正解密数据)。
+zip = { version = "8", default-features = false, features = ["aes-crypto"] }
+# task2 RAR4/RAR5 列目录:unrar 经 unrar-sys 捆绑 UnRAR C++ 源码静态编译
+# (cc/c++14,仅需 MSVC C++ 工作负载,无 cmake/vcpkg/外部 DLL)。
+unrar = "0.5"
+# task2 7z 列目录:纯 Rust;aes256 是打开加密 7z(含 -mhe=on)头所必需(引入 aes/cbc/rand)。
+sevenz-rust = { version = "0.6", features = ["aes256"] }
 
 [profile.release]
 panic = "abort"

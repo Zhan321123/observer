@@ -89,6 +89,14 @@ pub fn init(path: &Path) -> Result<Db, String> {
           camera TEXT NOT NULL,
           updated_at INTEGER NOT NULL
         );
+
+        -- 压缩包头加密密码(task2 §4):按绝对路径明文存(本地预览工具可接受;
+        -- 对外分发前评估换 OS 钥匙串,见 task2 §4 风险注记)
+        CREATE TABLE IF NOT EXISTS archive_password(
+          path TEXT PRIMARY KEY,
+          pwd TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
         ",
     )
     .map_err(|e| format!("建表失败: {e}"))?;
@@ -430,11 +438,61 @@ fn threed_list_conn(conn: &Connection) -> Result<Vec<ThreeDRow>, String> {
     Ok(out)
 }
 
+// ---- 压缩包密码(task2 §4:按绝对路径明文存,只用于列目录) ----
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct ArchivePwdRow {
+    pub path: String,
+    pub updated_at: i64,
+    // 注意:列表刻意不含 pwd 字段——记录管理只显路径与时间,不回显明文
+}
+
+fn archive_pwd_get_conn(conn: &Connection, path: &str) -> Result<Option<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT pwd FROM archive_password WHERE path = ?1")
+        .map_err(|e| e.to_string())?;
+    let mut rows = stmt.query(params![path]).map_err(|e| e.to_string())?;
+    match rows.next().map_err(|e| e.to_string())? {
+        Some(r) => Ok(Some(r.get(0).map_err(|e| e.to_string())?)),
+        None => Ok(None),
+    }
+}
+
+fn archive_pwd_set_conn(conn: &Connection, path: &str, pwd: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO archive_password(path, pwd, updated_at) VALUES(?1, ?2, ?3)
+         ON CONFLICT(path) DO UPDATE SET pwd = excluded.pwd, updated_at = excluded.updated_at",
+        params![path, pwd, now()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn archive_pwd_list_conn(conn: &Connection) -> Result<Vec<ArchivePwdRow>, String> {
+    let mut stmt = conn
+        .prepare("SELECT path, updated_at FROM archive_password ORDER BY updated_at DESC")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(ArchivePwdRow {
+                path: r.get(0)?,
+                updated_at: r.get(1)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
 /// 删除某表中指定路径的记录(记录管理单条/勾选删除用)。table 须为白名单内表名。
 fn remove_by_path(conn: &Connection, table: &str, path: &str) -> Result<(), String> {
     // table 来自固定调用点(不接收前端任意输入),仅用白名单校验防注入。
     let t = match table {
-        "preview_history" | "media_position" | "doc_position" | "threed_camera" => table,
+        "preview_history" | "media_position" | "doc_position" | "threed_camera"
+        | "archive_password" => table,
         _ => return Err(format!("非法表名: {table}")),
     };
     conn.execute(&format!("DELETE FROM {t} WHERE path = ?1"), params![path])
@@ -445,7 +503,8 @@ fn remove_by_path(conn: &Connection, table: &str, path: &str) -> Result<(), Stri
 /// 清空某表(记录管理"按类型清空"用)。
 fn clear_table(conn: &Connection, table: &str) -> Result<(), String> {
     let t = match table {
-        "preview_history" | "media_position" | "doc_position" | "threed_camera" => table,
+        "preview_history" | "media_position" | "doc_position" | "threed_camera"
+        | "archive_password" => table,
         _ => return Err(format!("非法表名: {table}")),
     };
     conn.execute(&format!("DELETE FROM {t}"), [])
@@ -613,6 +672,34 @@ pub fn history_apply_retention(db: State<Db>, limit: i64) -> Result<usize, Strin
     history_apply_retention_conn(&conn, limit)
 }
 
+// ---- 压缩包密码命令(task2 §4;记录管理走 remove/clear) ----
+
+#[tauri::command]
+pub fn archive_pwd_get(db: State<Db>, path: String) -> Result<Option<String>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    archive_pwd_get_conn(&conn, &path)
+}
+#[tauri::command]
+pub fn archive_pwd_set(db: State<Db>, path: String, pwd: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    archive_pwd_set_conn(&conn, &path, &pwd)
+}
+#[tauri::command]
+pub fn archive_pwd_remove(db: State<Db>, path: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    remove_by_path(&conn, "archive_password", &path)
+}
+#[tauri::command]
+pub fn archive_pwd_clear(db: State<Db>) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    clear_table(&conn, "archive_password")
+}
+#[tauri::command]
+pub fn archive_pwd_list(db: State<Db>) -> Result<Vec<ArchivePwdRow>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    archive_pwd_list_conn(&conn)
+}
+
 // ---- 测试 ----
 
 #[cfg(test)]
@@ -756,5 +843,28 @@ mod tests {
         // 历史本身保留并更新
         assert_eq!(history_list_conn(&conn).unwrap().iter().find(|r| r.path == p).unwrap().open_count, 2);
         let _ = std::fs::remove_file(&f);
+    }
+
+    /// 压缩包密码(task2 §4):get/set upsert / remove / clear;列表不含明文。
+    #[test]
+    fn archive_pwd_roundtrip() {
+        let (conn, _) = temp_conn();
+        assert_eq!(archive_pwd_get_conn(&conn, "C:/a.rar").unwrap(), None);
+        archive_pwd_set_conn(&conn, "C:/a.rar", "p1").unwrap();
+        assert_eq!(archive_pwd_get_conn(&conn, "C:/a.rar").unwrap(), Some("p1".into()));
+        archive_pwd_set_conn(&conn, "C:/a.rar", "p2").unwrap(); // upsert 覆盖(密码已改)
+        assert_eq!(archive_pwd_get_conn(&conn, "C:/a.rar").unwrap(), Some("p2".into()));
+
+        let rows = archive_pwd_list_conn(&conn).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].path, "C:/a.rar");
+
+        remove_by_path(&conn, "archive_password", "C:/a.rar").unwrap();
+        assert_eq!(archive_pwd_get_conn(&conn, "C:/a.rar").unwrap(), None);
+        assert!(archive_pwd_list_conn(&conn).unwrap().is_empty());
+
+        archive_pwd_set_conn(&conn, "C:/b.7z", "x").unwrap();
+        clear_table(&conn, "archive_password").unwrap();
+        assert!(archive_pwd_list_conn(&conn).unwrap().is_empty());
     }
 }

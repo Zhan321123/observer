@@ -1,8 +1,8 @@
 import {
   Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, ChevronLeft, ChevronRight,
-  Maximize, Expand, ZoomIn, ZoomOut, FolderOpen, Copy, Ratio, Scan,
+  Maximize, Expand, Minimize2, ZoomIn, ZoomOut, FolderOpen, Copy, Ratio, Scan,
   ListOrdered, WrapText, ClipboardCopy, Eye, FileCode, Film, LayoutGrid, Table,
-  RotateCcw, Orbit, Box, Grid3x3, Lightbulb,
+  RotateCcw, Orbit, Box, Grid3x3, Lightbulb, FolderArchive,
 } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
 import { useCellViewStore } from "../stores/cellViewStore";
@@ -38,17 +38,32 @@ const Sep = () => <div className="mx-1 h-5 w-px bg-line" />;
 /**
  * 功能 frame(§5):对选中格操作,按文件类型动态切换按钮组。
  * 无选中格时显示"未选择文件"并禁用全部。通用操作(资源管理器显示/复制路径)恒在。
+ *
+ * 覆盖层悬浮形态(task.md 交互修正):全界面/全屏时 FullViewOverlay 以 `floating + cellId +
+ * onExit` 复用本组件——对当前全屏格操作,"全界面/全屏"进入按钮换成"退出"(等效 Esc)。
  */
-export function FunctionBar() {
+export function FunctionBar({
+  cellId,
+  floating,
+  onExit,
+}: {
+  /** 目标格(覆盖层悬浮条传全屏格);缺省 = 选中格 */
+  cellId?: number | null;
+  /** 悬浮形态:圆角 + 边框 + 阴影(无 border-t) */
+  floating?: boolean;
+  /** 存在时(覆盖层模式):以"退出"按钮替代"全界面/全屏"进入按钮 */
+  onExit?: () => void;
+}) {
   const selected = useGridStore((s) => s.selected);
-  const cell = useGridStore((s) => (s.selected != null ? s.cells[s.selected] : null));
-  const view = useCellViewStore((s) => (selected != null ? s.views[selected] : undefined));
+  const target = cellId ?? selected;
+  const cell = useGridStore((s) => (target != null ? s.cells[target] : null));
+  const view = useCellViewStore((s) => (target != null ? s.views[target] : undefined));
 
   const file = cell?.file ?? null;
   const kind = file?.kind;
   // 事件时取控制:cellControls 是普通 Map(非响应式),渲染期快照会拿到过期的死闭包
   // (xlsx 异步解析完成后重注册,快照仍指向 wb=null 的旧控制 → 切 sheet 无反应)。
-  const ctl = () => getControl(selected);
+  const ctl = () => getControl(target);
 
   const isMedia = kind === "video" || kind === "audio";
   const isImage = kind === "image";
@@ -62,6 +77,9 @@ export function FunctionBar() {
   const isSvg = file?.ext === "svg";
   const isCsv = file?.ext === "csv" || file?.ext === "tsv";
   const isLottie = file?.sniffed === "lottie";
+  // 双身份压缩容器(task2 §5):xlsx/xlsm/ods 本质是 zip → 功能条出"压缩包目录/表格"切换
+  const isZipSheet = isSpreadsheet && ["xlsx", "xlsm", "ods"].includes(file?.ext ?? "");
+  const xlsxArchive = isSpreadsheet && view?.xlsxMode === "archive";
   // 可含透明层的图片(显示"透明网格"开关);gif/ico 也支持
   const alphaImage =
     isImage && ["png", "webp", "gif", "avif", "svg", "ico", "tiff", "tif", "tga"].includes(file?.ext ?? "");
@@ -75,7 +93,11 @@ export function FunctionBar() {
   const fitMode = view?.fitMode;
 
   return (
-    <div className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto border-t border-line bg-panel px-2">
+    <div
+      className={`flex h-11 shrink-0 items-center gap-1 overflow-x-auto px-2 ${
+        floating ? "rounded-lg border border-line bg-panel shadow-2xl" : "border-t border-line bg-panel"
+      }`}
+    >
       {!file ? (
         <span className="px-2 text-xs text-text-dim">未选择文件</span>
       ) : (
@@ -300,22 +322,36 @@ export function FunctionBar() {
             </>
           )}
 
-          {/* 表格组(xlsx):sheet 下拉 */}
+          {/* 表格组(xlsx):sheet 下拉(压缩包目录视角下隐藏)+ 双身份切换(task2 §5) */}
           {isSpreadsheet && (
             <>
-              <span className="shrink-0 text-[11px] text-text-dim">工作表</span>
-              <select
-                className="max-w-40 rounded bg-panel-2 px-1 text-[11px] text-text outline-none"
-                value={view?.sheetIndex ?? 0}
-                onChange={(e) => ctl()?.setSheet?.(Number(e.target.value))}
-                title="选择工作表"
-              >
-                {(view?.sheetNames ?? []).map((s, i) => (
-                  <option key={i} value={i}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              {!xlsxArchive && (
+                <>
+                  <span className="shrink-0 text-[11px] text-text-dim">工作表</span>
+                  <select
+                    className="max-w-40 rounded bg-panel-2 px-1 text-[11px] text-text outline-none"
+                    value={view?.sheetIndex ?? 0}
+                    onChange={(e) => ctl()?.setSheet?.(Number(e.target.value))}
+                    title="选择工作表"
+                  >
+                    {(view?.sheetNames ?? []).map((s, i) => (
+                      <option key={i} value={i}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {/* xlsx 双身份:压缩包目录 / 表格预览(zip 容器限定) */}
+              {isZipSheet && (
+                <BarButton
+                  title={xlsxArchive ? "切换到表格预览" : "以压缩包目录查看(zip 容器)"}
+                  active={!xlsxArchive}
+                  onClick={() => ctl()?.toggleXlsxMode?.()}
+                >
+                  {xlsxArchive ? <Table size={16} /> : <FolderArchive size={16} />}
+                </BarButton>
+              )}
             </>
           )}
 
@@ -381,8 +417,15 @@ export function FunctionBar() {
             </BarButton>
           )}
 
-          {/* 全界面 / 全屏(图片 / 视频 / PDF / 3D,§4.6) */}
-          {(isImage || kind === "video" || isPdf || isThreed) && (
+          {/* 覆盖层悬浮条:退出按钮(等效 Esc);普通形态:全界面 / 全屏(图片 / 视频 / PDF / 3D,§4.6) */}
+          {onExit ? (
+            <>
+              <Sep />
+              <BarButton title="退出全界面/全屏(Esc)" onClick={onExit}>
+                <Minimize2 size={16} />
+              </BarButton>
+            </>
+          ) : (isImage || kind === "video" || isPdf || isThreed) ? (
             <>
               <Sep />
               <BarButton title="全界面显示(Esc 退出)" onClick={() => ctl()?.enterFullView?.()}>
@@ -392,7 +435,7 @@ export function FunctionBar() {
                 <Expand size={16} />
               </BarButton>
             </>
-          )}
+          ) : null}
 
           {/* 通用操作 */}
           <div className="flex-1" />

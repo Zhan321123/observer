@@ -47,6 +47,8 @@ export interface CellView {
   /** xlsx:工作表名列表 / 当前 sheet 下标(默认 0) */
   sheetNames?: string[];
   sheetIndex?: number;
+  /** xlsx 双身份(task2 §5):表格/压缩包目录视角(默认 table;zip 容器可切目录树) */
+  xlsxMode?: "table" | "archive";
   /** 含透明图层图片:透明棋盘格背景开关(默认关) */
   transparencyGrid?: boolean;
 
