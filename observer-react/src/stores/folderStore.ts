@@ -41,6 +41,10 @@ interface FolderState {
   getExpandedPaths(): string[];
   /** 按路径集合重展开(树展开持久化还原用;须在 openFolder 之后调用) */
   applyExpandedPaths(paths: string[]): Promise<void>;
+  /** 展开一层:当前可见范围内的折叠目录各展开一级(不递归新载入的子级 → 连点逐层下探,防全展开变扫盘) */
+  expandOneLevel(): Promise<void>;
+  /** 全部闭合:同步折叠所有已展开目录(已加载子级保留,重展秒开) */
+  collapseAll(): void;
 }
 
 export const useFolderStore = create<FolderState>((set, get) => ({
@@ -158,5 +162,45 @@ export const useFolderStore = create<FolderState>((set, get) => ({
     };
     await walk(get().rootChildren);
     set({ rootChildren: [...get().rootChildren] }); // 触发渲染
+  },
+
+  expandOneLevel: async () => {
+    // 只收集"当前可见"的折叠目录(展开过的分支才下钻收集),各展开一级;
+    // 新载入的子级保持折叠 → 每点一次下探一层,不会一次递归整棵子树
+    const collapsed: TreeNode[] = [];
+    const collect = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (!n.entry.is_dir) continue;
+        if (!n.expanded) collapsed.push(n);
+        else if (n.children) collect(n.children);
+      }
+    };
+    collect(get().rootChildren);
+    await Promise.all(
+      collapsed.map(async (n) => {
+        if (n.children == null) {
+          try {
+            n.children = visible(await listDir(n.entry.path)).map(toNode);
+          } catch {
+            n.children = [];
+          }
+        }
+        n.expanded = true;
+      }),
+    );
+    set({ rootChildren: [...get().rootChildren] }); // 触发渲染
+  },
+
+  collapseAll: () => {
+    const walk = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (n.expanded) {
+          n.expanded = false;
+          if (n.children) walk(n.children);
+        }
+      }
+    };
+    walk(get().rootChildren);
+    set({ rootChildren: [...get().rootChildren] });
   },
 }));

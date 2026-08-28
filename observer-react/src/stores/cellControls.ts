@@ -39,6 +39,10 @@ export interface CellControl {
   setSheet?(i: number): void;
   /** xlsx 双身份(task2 §5):表格/压缩包目录视角切换 */
   toggleXlsxMode?(): void;
+  /** 压缩包目录树:全部展开(包内树纯内存,一次性全开,无 IO) */
+  archiveExpandAll?(): void;
+  /** 压缩包目录树:全部闭合 */
+  archiveCollapseAll?(): void;
   /** 含透明图层图片:透明棋盘格背景开关 */
   toggleTransparencyGrid?(): void;
   /** CSV/TSV:表格/文本模式切换 */
@@ -63,10 +67,26 @@ export interface CellControl {
 
 const reg = new Map<number, CellControl>();
 
+/**
+ * 键级合并注册(而非整体替换):同一格可嵌套多个带控制的预览组件——
+ * 如 XlsxView 压缩包视角内嵌 ArchiveTree,子先注册目录树控制、父后合并
+ * toggleXlsxMode,互不覆盖(整体替换会冲掉对方的按钮)。
+ * 卸载清理只收回本次写入的键;已被后来者覆盖的键还原为先前的值。
+ */
 export function registerControl(id: number, c: CellControl): () => void {
-  reg.set(id, c);
+  const prev = reg.get(id) as Record<string, unknown> | undefined;
+  reg.set(id, { ...prev, ...c });
   return () => {
-    if (reg.get(id) === c) reg.delete(id);
+    const cur = reg.get(id) as Record<string, unknown> | undefined;
+    if (!cur) return;
+    const next: Record<string, unknown> = { ...cur };
+    for (const k of Object.keys(c)) {
+      if (next[k] !== (c as unknown as Record<string, unknown>)[k]) continue; // 后来者的键,不动
+      if (prev && k in prev) next[k] = prev[k]; // 还原先前值
+      else delete next[k];
+    }
+    if (Object.keys(next).length === 0) reg.delete(id);
+    else reg.set(id, next as unknown as CellControl);
   };
 }
 

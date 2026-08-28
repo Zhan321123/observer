@@ -2,7 +2,7 @@ import {
   Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, ChevronLeft, ChevronRight,
   Maximize, Expand, Minimize2, ZoomIn, ZoomOut, FolderOpen, Copy, Ratio, Scan,
   ListOrdered, WrapText, ClipboardCopy, Eye, FileCode, Film, LayoutGrid, Table,
-  RotateCcw, Orbit, Box, Grid3x3, Lightbulb, FolderArchive,
+  RotateCcw, Orbit, Box, Grid3x3, Lightbulb, FolderArchive, ChevronsUpDown, ChevronsDownUp,
 } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
 import { useCellViewStore } from "../stores/cellViewStore";
@@ -80,6 +80,8 @@ export function FunctionBar({
   // 双身份压缩容器(task2 §5):xlsx/xlsm/ods 本质是 zip → 功能条出"压缩包目录/表格"切换
   const isZipSheet = isSpreadsheet && ["xlsx", "xlsm", "ods"].includes(file?.ext ?? "");
   const xlsxArchive = isSpreadsheet && view?.xlsxMode === "archive";
+  // 压缩包目录树(纯 archive 或 xlsx 双身份的压缩包视角):功能条出"全部展开/全部闭合"
+  const isArchiveTree = kind === "archive" || xlsxArchive;
   // 可含透明层的图片(显示"透明网格"开关);gif/ico 也支持
   const alphaImage =
     isImage && ["png", "webp", "gif", "avif", "svg", "ico", "tiff", "tif", "tga"].includes(file?.ext ?? "");
@@ -352,6 +354,18 @@ export function FunctionBar({
                   {xlsxArchive ? <Table size={16} /> : <FolderArchive size={16} />}
                 </BarButton>
               )}
+            </>
+          )}
+
+          {/* 压缩包目录树组:全部展开 / 全部闭合(包内树纯内存无 IO;xlsx 双身份视角同享) */}
+          {isArchiveTree && (
+            <>
+              <BarButton title="全部展开" onClick={() => ctl()?.archiveExpandAll?.()}>
+                <ChevronsUpDown size={16} />
+              </BarButton>
+              <BarButton title="全部闭合" onClick={() => ctl()?.archiveCollapseAll?.()}>
+                <ChevronsDownUp size={16} />
+              </BarButton>
             </>
           )}
 

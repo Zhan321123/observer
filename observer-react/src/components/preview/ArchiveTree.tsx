@@ -11,6 +11,7 @@ import {
   type ArchiveErr,
 } from "../../lib/tauri";
 import { useCellViewStore } from "../../stores/cellViewStore";
+import { registerControl } from "../../stores/cellControls";
 import type { PreviewProps } from "../../formats/types";
 
 /**
@@ -218,6 +219,30 @@ export function ArchiveTree({ file, cellId }: PreviewProps) {
     if (tree) flatten(tree, 0, expanded, out);
     return out;
   }, [tree, expanded]);
+
+  // 命令式控制(功能条"全部展开/全部闭合"):包内树纯内存,收集全部目录路径即可,无 IO。
+  // 经 registerControl 键级合并,与宿主(XlsxView 双身份)的 toggleXlsxMode 共存。
+  useEffect(
+    () =>
+      registerControl(cellId, {
+        kind: file.kind,
+        archiveExpandAll: () => {
+          const dirs: string[] = [];
+          const walk = (nodes: ArcNode[]) => {
+            for (const n of nodes)
+              if (n.isDir && n.children) {
+                dirs.push(n.path);
+                walk(n.children);
+              }
+          };
+          if (tree) walk(tree);
+          setExpanded(new Set(dirs));
+        },
+        archiveCollapseAll: () => setExpanded(new Set()),
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cellId, file.kind, tree]
+  );
 
   const virtualizer = useVirtualizer({
     count: flat.length,
