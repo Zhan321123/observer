@@ -39,6 +39,16 @@ export interface CellControl {
   setSheet?(i: number): void;
   /** xlsx 双身份(task2 §5):表格/压缩包目录视角切换 */
   toggleXlsxMode?(): void;
+  /** 文档(task2 二):文档/压缩包目录视角切换(循 xlsxMode 先例) */
+  toggleDocMode?(): void;
+  /** 字体(task2 二):样张/字形表视角切换 */
+  toggleFontMode?(): void;
+  /** SQLite(task2 二):选择表下标 */
+  setSqliteTable?(i: number): void;
+  /** SQLite(task2 二):数据页步进 */
+  sqlitePageStep?(dir: 1 | -1): void;
+  /** SQLite(task2 二):结构(DDL)面板开关 */
+  toggleSchema?(): void;
   /** 压缩包目录树:全部展开(包内树纯内存,一次性全开,无 IO) */
   archiveExpandAll?(): void;
   /** 压缩包目录树:全部闭合 */

@@ -9,22 +9,34 @@ use std::path::Path;
 /// 扩展名 → 类别(快路径)。与前端 formats/registry.ts 同序同覆盖。
 pub fn kind_for_ext(ext: &str) -> &'static str {
     match ext {
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "ico" | "avif" | "tiff"
-        | "tif" | "tga" | "dds" | "qoi" | "hdr" | "exr" | "heic" | "heif" | "psd" | "psb"
-        | "cr2" | "cr3" | "nef" | "arw" | "orf" | "rw2" | "dng" | "raf" => "image",
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "svgz" | "bmp" | "ico" | "avif"
+        | "apng" | "tiff" | "tif" | "tga" | "dds" | "qoi" | "hdr" | "exr" | "heic" | "heif"
+        | "psd" | "psb" | "cr2" | "cr3" | "nef" | "arw" | "orf" | "rw2" | "dng" | "raf"
+        | "pef" | "srw" | "x3f" | "iiq" => "image",
 
-        "mp4" | "webm" | "m4v" | "ogv" | "mkv" | "m2ts" | "mts" | "m4s" | "mov"
+        "mp4" | "webm" | "m4v" | "ogv" | "ogm" | "mkv" | "m2ts" | "mts" | "m4s" | "mov"
         | "wmv" | "asf" | "flv" | "vob" | "rm" | "rmvb" | "3gp" | "y4m" | "avi" | "mpg"
         | "mpeg" | "hevc" => "video",
 
         "mp3" | "wav" | "ogg" | "oga" | "m4a" | "aac" | "flac" | "opus" | "weba" | "ape"
-        | "wv" | "tta" | "wma" | "aiff" | "aif" | "dsf" | "dff" | "mid" | "midi" | "mod"
-        | "xm" | "s3m" | "it" => "audio",
+        | "wv" | "tta" | "wma" | "aiff" | "aif" | "aifc" | "dsf" | "dff" | "amr" | "ac3"
+        | "dts" | "caf" | "voc" | "w64" | "mka" | "mid" | "midi" | "mod" | "xm" | "s3m"
+        | "it" => "audio",
 
         "md" | "markdown" | "mdown" | "mkd" => "markdown",
 
         // 电子表格(第二批:xlsx 支持,SheetJS 解析)
         "xlsx" | "xls" | "xlsm" | "ods" => "spreadsheet",
+
+        // 文档(task2 二:docx/pptx,zip 容器,docx-preview/pptx-browser 渲染;
+        // "压缩包目录"由功能条 docMode 附加切换,循 xlsx 双身份先例)
+        "docx" | "pptx" => "document",
+
+        // 字体(task2 二:FontFace 样张 + opentype.js 字形表)
+        "ttf" | "otf" | "woff" | "woff2" | "ttc" => "font",
+
+        // SQLite(task2 二:rusqlite 只读浏览)
+        "db" | "sqlite" | "sqlite3" | "db3" => "sqlite",
 
         // PDF(第三批:pdf.js 渲染)
         "pdf" => "pdf",
@@ -36,10 +48,11 @@ pub fn kind_for_ext(ext: &str) -> &'static str {
         // 动效(M4:dotLottie / Rive / SVGA;Lottie 的 .json 走 text 嗅探)
         "lottie" | "riv" | "svga" => "anim",
 
-        // 压缩包(task2):目录树预览。docx/pptx/jar/epub 无原生预览,默认即压缩包目录;
-        // xlsx/xlsm 本质也是 zip 容器但保持 spreadsheet(默认路由),"压缩包目录"只是
-        // 功能条的附加视角;.7z.001 等分卷不加(走 unknown→魔数嗅探,首卷给占位提示)。
-        "zip" | "rar" | "7z" | "jar" | "epub" | "docx" | "pptx" => "archive",
+        // 压缩包(task2):目录树预览。jar/epub 无原生预览,默认即压缩包目录;
+        // docx/pptx 已移居 document(task2 二);iWork(pages/numbers/key)同为 zip 容器,
+        // 先给目录树(task2 一);xlsx/xlsm 本质也是 zip 容器但保持 spreadsheet(默认路由),
+        // "压缩包目录"只是功能条的附加视角;.7z.001 等分卷不加(走 unknown→魔数嗅探,首卷给占位提示)。
+        "zip" | "rar" | "7z" | "jar" | "epub" | "pages" | "numbers" | "key" => "archive",
 
         "txt" | "json" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "rs" | "py" | "css"
         | "scss" | "less" | "html" | "htm" | "xml" | "yml" | "yaml" | "toml" | "ini" | "conf"
@@ -62,15 +75,23 @@ pub fn kind_for_sniff(sniff: &str, fallback: &str) -> &'static str {
         // PDF(第三批:pdf.js 渲染)
         "pdf" => "pdf",
         // 压缩包(task2):魔数/容器细分结果。xlsx 容器保持 spreadsheet(默认路由),
-        // 伪装成 .bin 的 xlsx 也会被纠正到表格;jar/epub/docx/pptx → archive。
-        "zip" | "rar4" | "rar5" | "7z" | "jar" | "epub" | "docx" | "pptx" => "archive",
+        // 伪装成 .bin 的 xlsx 也会被纠正到表格;docx/pptx → document(task2 二);
+        // jar/epub → archive。
+        "zip" | "rar4" | "rar5" | "7z" | "jar" | "epub" => "archive",
+        "docx" | "pptx" => "document",
         "xlsx" => "spreadsheet",
+        // 字体/SQLite 魔数(task2 二):伪装成 .bin 的字体/库也会被纠正
+        "ttf" | "otf" | "woff" | "woff2" | "ttc" => "font",
+        "sqlite" => "sqlite",
         _ => match fallback {
             "image" => "image",
             "video" => "video",
             "audio" => "audio",
             "markdown" => "markdown",
             "spreadsheet" => "spreadsheet",
+            "document" => "document",
+            "font" => "font",
+            "sqlite" => "sqlite",
             "pdf" => "pdf",
             "threed" => "threed",
             "anim" => "anim",
@@ -162,6 +183,28 @@ pub fn sniff(path: &Path) -> Option<&'static str> {
         return Some("7z");
     }
 
+    // 字体魔数(task2 二):sfnt(0x00010000 TrueType / OTTO CFF / ttcf 集合)与 woff/woff2。
+    // 0x00010000 前 4 字节含 NUL,不会被 sniff_text 误吞,但保持二进制段在前、文本嗅探在后的次序。
+    if n >= 4 && &b[0..4] == b"OTTO" {
+        return Some("otf");
+    }
+    if n >= 4 && &b[0..4] == b"ttcf" {
+        return Some("ttc");
+    }
+    if n >= 4 && &b[0..4] == b"wOFF" {
+        return Some("woff");
+    }
+    if n >= 4 && &b[0..4] == b"wOF2" {
+        return Some("woff2");
+    }
+    if n >= 4 && b[0..4] == [0x00, 0x01, 0x00, 0x00] {
+        return Some("ttf");
+    }
+    // SQLite(task2 二):头 16 字节 "SQLite format 3\0"
+    if n >= 16 && &b[0..15] == b"SQLite format 3" {
+        return Some("sqlite");
+    }
+
     // Lottie 嗅探:JSON 且含 v/fr/ip/op/layers 五件套(method.md §2)
     if let Some(text) = sniff_text(b) {
         if looks_like_lottie(text) {
@@ -220,10 +263,10 @@ mod tests {
         assert_eq!(kind_for_ext("xyz"), "unknown");
     }
 
-    /// 压缩包扩展名(task2):archive 类;xlsx 保持 spreadsheet(默认路由)。
+    /// 压缩包扩展名(task2):archive 类;docx/pptx 已移居 document(task2 二);xlsx 保持 spreadsheet。
     #[test]
     fn kind_for_ext_covers_archive() {
-        for e in ["zip", "rar", "7z", "jar", "epub", "docx", "pptx"] {
+        for e in ["zip", "rar", "7z", "jar", "epub", "pages", "numbers", "key"] {
             assert_eq!(kind_for_ext(e), "archive", "ext {e} 应为 archive");
         }
         // 双身份:xlsx 本质是 zip 容器,但默认仍是表格("压缩包目录"只是功能条附加视角)
@@ -234,13 +277,54 @@ mod tests {
         assert_eq!(kind_for_ext("z01"), "unknown");
     }
 
-    /// 压缩包嗅探结果 → kind(魔数命中;xlsx 容器细分纠正回 spreadsheet)。
+    /// task2 二:字体 / SQLite / 文档(docx/pptx 从 archive 移居 document,默认渲染文档)。
+    #[test]
+    fn kind_for_ext_covers_task2_batch2() {
+        for e in ["ttf", "otf", "woff", "woff2", "ttc"] {
+            assert_eq!(kind_for_ext(e), "font", "ext {e} 应为 font");
+        }
+        for e in ["db", "sqlite", "sqlite3", "db3"] {
+            assert_eq!(kind_for_ext(e), "sqlite", "ext {e} 应为 sqlite");
+        }
+        for e in ["docx", "pptx"] {
+            assert_eq!(kind_for_ext(e), "document", "ext {e} 应为 document");
+        }
+    }
+
+    /// task2 一零成本扩充:apng/svgz、amr 等 FFmpeg 直解音频、pef 等 RAW、ogm、iWork 容器。
+    #[test]
+    fn kind_for_ext_covers_task2_batch1() {
+        for e in ["apng", "svgz", "pef", "srw", "x3f", "iiq"] {
+            assert_eq!(kind_for_ext(e), "image", "ext {e} 应为 image");
+        }
+        for e in ["amr", "ac3", "dts", "caf", "aifc", "voc", "w64", "mka"] {
+            assert_eq!(kind_for_ext(e), "audio", "ext {e} 应为 audio");
+        }
+        assert_eq!(kind_for_ext("ogm"), "video");
+        for e in ["pages", "numbers", "key"] {
+            assert_eq!(kind_for_ext(e), "archive", "ext {e} 应为 archive");
+        }
+        // 回归:同前缀既有项不受影响
+        assert_eq!(kind_for_ext("m4a"), "audio");
+        assert_eq!(kind_for_ext("mkv"), "video");
+        assert_eq!(kind_for_ext("aiff"), "audio");
+    }
+
+    /// 压缩包嗅探结果 → kind(魔数命中;xlsx 容器细分纠正回 spreadsheet;docx/pptx → document)。
     #[test]
     fn kind_for_sniff_archive() {
-        for s in ["zip", "rar4", "rar5", "7z", "jar", "epub", "docx", "pptx"] {
+        for s in ["zip", "rar4", "rar5", "7z", "jar", "epub"] {
             assert_eq!(kind_for_sniff(s, "unknown"), "archive", "嗅探 {s} 应为 archive");
         }
+        for s in ["docx", "pptx"] {
+            assert_eq!(kind_for_sniff(s, "unknown"), "document", "嗅探 {s} 应为 document");
+        }
         assert_eq!(kind_for_sniff("xlsx", "archive"), "spreadsheet");
+        // task2 二魔数:字体 / SQLite
+        for s in ["ttf", "otf", "woff", "woff2", "ttc"] {
+            assert_eq!(kind_for_sniff(s, "unknown"), "font", "嗅探 {s} 应为 font");
+        }
+        assert_eq!(kind_for_sniff("sqlite", "unknown"), "sqlite");
         // fallback 透传:ext 已判 archive、嗅探不认识时保留 archive
         assert_eq!(kind_for_sniff("something-else", "archive"), "archive");
     }
@@ -250,6 +334,26 @@ mod tests {
     fn kind_for_sniff_fallback_keeps_new_kinds() {
         assert_eq!(kind_for_sniff("something-else", "threed"), "threed");
         assert_eq!(kind_for_sniff("something-else", "anim"), "anim");
+        assert_eq!(kind_for_sniff("something-else", "font"), "font");
+        assert_eq!(kind_for_sniff("something-else", "sqlite"), "sqlite");
+        assert_eq!(kind_for_sniff("something-else", "document"), "document");
         assert_eq!(kind_for_sniff("lottie", "text"), "text");
+    }
+
+    /// 字体/SQLite 魔数嗅探(task2 二):伪装成 .bin 等未知扩展名也能识别。
+    #[test]
+    fn sniffs_font_and_sqlite_magic() {
+        let dir = std::env::temp_dir();
+        let mut check = |name: &str, bytes: &[u8], want: &str| {
+            let p = dir.join(format!("observer_sniff_{name}_{}", std::process::id()));
+            std::fs::write(&p, bytes).unwrap();
+            assert_eq!(sniff(&p), Some(want), "{name} 嗅探不符");
+        };
+        check("ttf.bin", &[0x00, 0x01, 0x00, 0x00, 0, 0, 0, 0], "ttf");
+        check("otf.bin", b"OTTO\0\0\0\0", "otf");
+        check("ttc.bin", b"ttcf\0\0\0\0", "ttc");
+        check("woff.bin", b"wOFF\0\0\0\0", "woff");
+        check("woff2.bin", b"wOF2\0\0\0\0", "woff2");
+        check("sqlite.bin", b"SQLite format 3\0rest", "sqlite");
     }
 }

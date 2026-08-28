@@ -9,7 +9,11 @@ import { PlaceholderView } from "../../components/preview/PlaceholderView";
 // 含视频流的 m4s 由 detect_format 判为 video,仍走视频 handler,不会到这里。
 const NATIVE = ["mp3", "wav", "ogg", "oga", "m4a", "aac", "flac", "opus", "weba", "m4s"];
 // M3 非常规音频:FFmpeg 可 demux/decode → 复用 loopback 流式(seek=改 t 重启)→ StreamAudioView。
-const STREAM = ["ape", "wv", "tta", "wma", "aiff", "aif", "dsf", "dff"];
+// task2 一补登记:amr/ac3/dts/caf/aifc/voc/w64(FFmpeg 直解)+ mka(Matroska 纯音频)。
+const STREAM = [
+  "ape", "wv", "tta", "wma", "aiff", "aif", "dsf", "dff",
+  "amr", "ac3", "dts", "caf", "aifc", "voc", "w64", "mka",
+];
 // M3 MIDI:rustysynth SoundFont 合成 → WAV → 原生播放(需用户提供 .sf2,见 MidiView)。
 const MIDI = ["mid", "midi"];
 // Tracker/chiptune:libopenmpt 为 C 库、随包编译风险高,本轮保持优雅占位(不破坏构建)。

@@ -9,6 +9,8 @@ import {
   Boxes,
   Sparkles,
   FileArchive,
+  Type,
+  Database,
   type LucideIcon,
 } from "lucide-react";
 import type { FileKind } from "../types/file";
@@ -20,6 +22,9 @@ export const KIND_ICON: Record<FileKind, { Icon: LucideIcon; cls: string }> = {
   video: { Icon: Film, cls: "text-sky-400/80" },
   audio: { Icon: Music, cls: "text-rose-400/80" },
   spreadsheet: { Icon: Table2, cls: "text-emerald-400/80" },
+  document: { Icon: FileText, cls: "text-sky-400/80" },
+  font: { Icon: Type, cls: "text-violet-400/80" },
+  sqlite: { Icon: Database, cls: "text-amber-400/80" },
   pdf: { Icon: BookOpen, cls: "text-red-400/80" },
   threed: { Icon: Boxes, cls: "text-amber-400/80" },
   anim: { Icon: Sparkles, cls: "text-fuchsia-400/80" },

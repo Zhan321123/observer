@@ -5,6 +5,7 @@ mod db;
 mod ffmpeg;
 mod formats;
 mod imgdec;
+mod sqlite;
 
 use tauri::Manager;
 
@@ -75,6 +76,8 @@ pub fn run() {
             db::archive_pwd_remove,
             db::archive_pwd_clear,
             db::archive_pwd_list,
+            sqlite::sqlite_tables,
+            sqlite::sqlite_page,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

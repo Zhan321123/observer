@@ -8,18 +8,37 @@ interface Props {
   /** 未截断的总行数 / 总列数(用于截断提示) */
   totalRows: number;
   totalCols: number;
+  /** 可选表头行(SQLite 浏览,task2 二):sticky 顶部;不传则全部按数据行渲染(xlsx/csv 现状) */
+  headerRow?: string[];
 }
 
 /**
- * 通用表格渲染(xlsx / csv 共用)。sticky 行号列、斑马纹、超上限截断提示。
+ * 通用表格渲染(xlsx / csv / SQLite 共用)。sticky 行号列、斑马纹、超上限截断提示。
  * 容器 select-text:在全局 user-select:none 下 opt-in,允许拖选单元格文字后复制。
  */
-export function DataTable({ rows, totalRows, totalCols }: Props) {
+export function DataTable({ rows, totalRows, totalCols, headerRow }: Props) {
   const truncated = totalRows > TABLE_MAX_ROWS || totalCols > TABLE_MAX_COLS;
 
   return (
     <div className="h-full w-full select-text overflow-auto bg-panel">
       <table className="border-collapse text-[12px] text-text">
+        {headerRow && (
+          <thead className="sticky top-0 z-10">
+            <tr>
+              <th className="sticky left-0 select-none border border-line/40 bg-panel-2 px-1.5 py-0.5 text-right text-[10px] font-normal text-text-dim/50">
+                #
+              </th>
+              {headerRow.map((h, i) => (
+                <th
+                  key={i}
+                  className="whitespace-nowrap border border-line/40 bg-panel-2 px-2 py-0.5 text-left font-semibold"
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+        )}
         <tbody>
           {rows.map((r, ri) => (
             <tr key={ri} className={ri % 2 ? "bg-panel-2/40" : ""}>

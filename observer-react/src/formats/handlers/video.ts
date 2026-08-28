@@ -11,7 +11,7 @@ export const videoHandler: FormatHandler = {
   exts: [
     ...NATIVE,
     "mkv", "ts", "m2ts", "mts", "m4s", "mov", "wmv", "asf", "flv", "vob",
-    "rm", "rmvb", "3gp", "y4m", "avi", "mpg", "mpeg", "hevc",
+    "rm", "rmvb", "3gp", "y4m", "avi", "mpg", "mpeg", "hevc", "ogm",
   ],
   canHandle: (f) => f.kind === "video",
   resolve: (f) =>

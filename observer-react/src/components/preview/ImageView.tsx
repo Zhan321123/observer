@@ -37,13 +37,45 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
   const setFullScreen = useCellViewStore((s) => s.setFullScreen);
 
   const mode: FitMode = fitMode ?? defaultFit;
-  const isSvg = file.ext === "svg";
+  const isSvg = file.ext === "svg" || file.ext === "svgz";
   const showSvgText = isSvg && svgMode === "text";
   const [svgText, setSvgText] = useState<string | null>(null);
 
-  // svg 文本模式:读源码(svg 即 XML 文本,经 readTextFile)
+  // svgz:Chromium 不能直读 gzip 的 SVG → fetch asset://(协议带 CORS 头)→ DecompressionStream
+  // 解压 → blob URL 喂 <img>;解压文本同时供"源码"模式复用。普通格式仍走 asset:// 直连。
+  const [gunzipUrl, setGunzipUrl] = useState<string | null>(null);
   useEffect(() => {
-    if (!showSvgText) return;
+    if (file.ext !== "svgz") return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setGunzipUrl(null);
+    setSvgText(null);
+    (async () => {
+      try {
+        const raw = await fetch(assetUrl(file.path));
+        if (!raw.ok) throw new Error(`HTTP ${raw.status}`);
+        // DecompressionStream 对非 gzip 输入会 reject(改成 .svgz 后缀的普通 svg 等)
+        const inflated = await new Response(
+          raw.body!.pipeThrough(new DecompressionStream("gzip"))
+        ).blob();
+        const text = await inflated.text();
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }));
+        setGunzipUrl(objectUrl);
+        setSvgText(text);
+      } catch (e) {
+        if (!cancelled) setView(cellId, { error: `svgz 解压失败: ${String(e)}` });
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [file.path, file.ext, cellId, setView]);
+
+  // svg 文本模式:读源码(svg 即 XML 文本,经 readTextFile;svgz 已在上方解出)
+  useEffect(() => {
+    if (!showSvgText || file.ext === "svgz") return;
     let cancelled = false;
     setSvgText(null);
     readTextFile(file.path)
@@ -287,7 +319,8 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
     >
       <img
         ref={imgRef}
-        src={overrideSrc ?? assetUrl(file.path)}
+        // svgz 用解压出的 blob URL(未就绪则不挂 src,等 state 到位重渲染)
+        src={file.ext === "svgz" ? (gunzipUrl ?? undefined) : (overrideSrc ?? assetUrl(file.path))}
         alt={file.name}
         draggable={false}
         onLoad={() => {

@@ -52,6 +52,18 @@ export interface CellView {
   /** 含透明图层图片:透明棋盘格背景开关(默认关) */
   transparencyGrid?: boolean;
 
+  /** 文档(task2 二):文档/压缩包目录双身份(默认 document;循 xlsxMode 先例) */
+  docMode?: "document" | "archive";
+  /** 字体(task2 二):样张/字形表视角(默认 specimen)+ 试字文本(全屏接力瞬态,默认文件名去扩展名) */
+  fontMode?: "specimen" | "glyphs";
+  fontText?: string;
+  /** SQLite(task2 二):表清单 / 当前表下标 / 当前页偏移 / 总行数 / 结构面板开关 */
+  sqliteTables?: { name: string; kind: "table" | "view"; ddl: string }[];
+  sqliteTableIndex?: number;
+  sqliteOffset?: number;
+  sqliteTotal?: number;
+  sqliteShowSchema?: boolean;
+
   /** CSV/TSV:表格/文本模式(默认 table) */
   csvMode?: "table" | "text";
   /** SVG:预览/文本源码模式(默认 preview) */

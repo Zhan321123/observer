@@ -10,8 +10,12 @@ use std::path::Path;
 const MAX_PIXELS: f64 = 100_000_000.0;
 
 /// RAW 扩展名(rrawler 解码;与前端 image handler / 后端 kind_for_ext 路由一致)。
+/// task2 一补 pef/srw/x3f/iiq(rawler 已支持);个别机型解码失败走 Err → 前端错误占位,优雅降级。
 fn is_raw_ext(ext: &str) -> bool {
-    matches!(ext, "cr2" | "cr3" | "nef" | "arw" | "orf" | "rw2" | "dng" | "raf")
+    matches!(
+        ext,
+        "cr2" | "cr3" | "nef" | "arw" | "orf" | "rw2" | "dng" | "raf" | "pef" | "srw" | "x3f" | "iiq"
+    )
 }
 
 fn mtime_secs(meta: &std::fs::Metadata) -> i64 {

@@ -3,6 +3,7 @@ import {
   Maximize, Expand, Minimize2, ZoomIn, ZoomOut, FolderOpen, Copy, Ratio, Scan,
   ListOrdered, WrapText, ClipboardCopy, Eye, FileCode, Film, LayoutGrid, Table,
   RotateCcw, Orbit, Box, Grid3x3, Lightbulb, FolderArchive, ChevronsUpDown, ChevronsDownUp,
+  Type, FileText, FileTerminal,
 } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
 import { useCellViewStore } from "../stores/cellViewStore";
@@ -74,14 +75,19 @@ export function FunctionBar({
   const isAnim = kind === "anim";
   const isGif = file?.ext === "gif";
   const isIco = file?.ext === "ico";
-  const isSvg = file?.ext === "svg";
+  const isSvg = file?.ext === "svg" || file?.ext === "svgz";
   const isCsv = file?.ext === "csv" || file?.ext === "tsv";
   const isLottie = file?.sniffed === "lottie";
   // 双身份压缩容器(task2 §5):xlsx/xlsm/ods 本质是 zip → 功能条出"压缩包目录/表格"切换
   const isZipSheet = isSpreadsheet && ["xlsx", "xlsm", "ods"].includes(file?.ext ?? "");
   const xlsxArchive = isSpreadsheet && view?.xlsxMode === "archive";
-  // 压缩包目录树(纯 archive 或 xlsx 双身份的压缩包视角):功能条出"全部展开/全部闭合"
-  const isArchiveTree = kind === "archive" || xlsxArchive;
+  // task2 二:文档(docx/pptx,zip 容器)双身份 + 字体/SQLite
+  const isDocument = kind === "document";
+  const docArchive = isDocument && view?.docMode === "archive";
+  const isFont = kind === "font";
+  const isSqlite = kind === "sqlite";
+  // 压缩包目录树(纯 archive 或 xlsx/docx 双身份的压缩包视角):功能条出"全部展开/全部闭合"
+  const isArchiveTree = kind === "archive" || xlsxArchive || (isDocument && view?.docMode === "archive");
   // 可含透明层的图片(显示"透明网格"开关);gif/ico 也支持
   const alphaImage =
     isImage && ["png", "webp", "gif", "avif", "svg", "ico", "tiff", "tif", "tga"].includes(file?.ext ?? "");
@@ -93,6 +99,11 @@ export function FunctionBar({
   const rate = view?.rate ?? 1;
   const scale = view?.scale ?? 1;
   const fitMode = view?.fitMode;
+  // SQLite 分页区间(SqliteView PAGE_SIZE=100;仅显示用)
+  const sqTotal = view?.sqliteTotal ?? 0;
+  const sqOffset = view?.sqliteOffset ?? 0;
+  const sqFrom = sqTotal === 0 ? 0 : sqOffset + 1;
+  const sqTo = Math.min(sqOffset + 100, sqTotal);
 
   return (
     <div
@@ -357,6 +368,63 @@ export function FunctionBar({
             </>
           )}
 
+          {/* 文档组(task2 二):docx/pptx 均为 zip 容器 → 文档/压缩包目录双身份(循 xlsx 先例) */}
+          {isDocument && (
+            <BarButton
+              title={docArchive ? "切换到文档预览" : "以压缩包目录查看(zip 容器)"}
+              active={!docArchive}
+              onClick={() => ctl()?.toggleDocMode?.()}
+            >
+              {docArchive ? <FileText size={16} /> : <FolderArchive size={16} />}
+            </BarButton>
+          )}
+
+          {/* SQLite 组(task2 二):表下拉 + 翻页 + 结构(DDL)面板 */}
+          {isSqlite && (
+            <>
+              <span className="shrink-0 text-[11px] text-text-dim">表</span>
+              <select
+                className="max-w-40 rounded bg-panel-2 px-1 text-[11px] text-text outline-none"
+                value={view?.sqliteTableIndex ?? 0}
+                onChange={(e) => ctl()?.setSqliteTable?.(Number(e.target.value))}
+                title="选择表 / 视图"
+              >
+                {(view?.sqliteTables ?? []).map((t, i) => (
+                  <option key={i} value={i}>
+                    {t.kind === "view" ? `${t.name}(视图)` : t.name}
+                  </option>
+                ))}
+              </select>
+              <BarButton title="上一页" onClick={() => ctl()?.sqlitePageStep?.(-1)}>
+                <ChevronLeft size={16} />
+              </BarButton>
+              <span className="shrink-0 text-[11px] tabular-nums text-text-dim">
+                {sqFrom}–{sqTo} / {sqTotal.toLocaleString()}
+              </span>
+              <BarButton title="下一页" onClick={() => ctl()?.sqlitePageStep?.(1)}>
+                <ChevronRight size={16} />
+              </BarButton>
+              <BarButton
+                title="表结构(DDL)"
+                active={view?.sqliteShowSchema}
+                onClick={() => ctl()?.toggleSchema?.()}
+              >
+                <FileTerminal size={16} />
+              </BarButton>
+            </>
+          )}
+
+          {/* 字体组(task2 二):样张 / 字形表切换 */}
+          {isFont && (
+            <BarButton
+              title={view?.fontMode === "glyphs" ? "切换到样张" : "查看字形表"}
+              active={view?.fontMode !== "glyphs"}
+              onClick={() => ctl()?.toggleFontMode?.()}
+            >
+              {view?.fontMode === "glyphs" ? <Type size={16} /> : <Grid3x3 size={16} />}
+            </BarButton>
+          )}
+
           {/* 压缩包目录树组:全部展开 / 全部闭合(包内树纯内存无 IO;xlsx 双身份视角同享) */}
           {isArchiveTree && (
             <>
@@ -439,7 +507,7 @@ export function FunctionBar({
                 <Minimize2 size={16} />
               </BarButton>
             </>
-          ) : (isImage || kind === "video" || isPdf || isThreed) ? (
+          ) : (isImage || kind === "video" || isPdf || isThreed || isDocument) ? (
             <>
               <Sep />
               <BarButton title="全界面显示(Esc 退出)" onClick={() => ctl()?.enterFullView?.()}>

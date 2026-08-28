@@ -104,6 +104,8 @@ observer-tauri/target/release/bundle/{nsis,msi}/
 - **压缩包目录树(task2)**:zip/RAR4/RAR5/7z 只读中央目录列条目(不解压),宫格内可折叠树 + 虚拟滚动,文件行点击无动作;数据加密条目带锁标记;头加密(`rar -hp`/`7z -mhe=on`)→ 宫格内密码框,密码按路径明文存 SQLite(先自动试已存密码,记录管理可单删/清空);双身份 zip 容器功能条切"压缩包目录/原生预览"(xlsx↔表格;jar/epub/docx/pptx 默认即目录);分卷压缩暂缓(尾卷隐藏、首卷占位提示)
 - 功能条按类型切换;在资源管理器显示、复制路径可用;**三处右键菜单(资源管理器打开/复制路径)**;打开的文件列表可单格关闭;全界面/全屏显示(Esc/F11 退出,**底部热区悬浮功能条:移到窗口最下方浮出、移离延时自动隐藏,对当前全屏格操作**)
 - 格式识别:扩展名初筛 + 魔数嗅探(ftyp/RIFF/OggS/fLaC/Lottie 五件套等)
+- **格式覆盖零成本扩充(task2 一)**:apng、svgz(fetch+gunzip→blob,支持源码模式)、amr/ac3/dts/caf/aifc/voc/w64/mka(FFmpeg 流式)、ogm、RAW 扩充 pef/srw/x3f/iiq(rawler)、iWork 容器(pages/numbers/key 目录树)
+- **字体 / SQLite / 文档渲染(task2 二)**:字体(ttf/otf/woff/woff2/ttc)FontFace 样张 + 选中格试字输入 + opentype.js 字形表;SQLite(db/sqlite)表/视图下拉 + 分页浏览 + 结构 DDL 面板(rusqlite 只读,WAL 回退,BLOB 占位);docx/pptx 页面流渲染(docx-preview / pptx-browser 懒渲染),功能条"文档/压缩包目录"双身份切换,滚动位置持久化
 - 文件信息框:名称/格式/大小/修改时间/可复制路径/图片分辨率/**视频音频 ffprobe 元信息**
 - **持久化(M2 SQLite)**:预览历史(顶栏"历史"可查看/单删/清空)、宫格全景(布局+各格文件+选中格)、当前文件夹、设置项、播放进度/文本滚动/图片缩放 —— 重启后整体恢复
 

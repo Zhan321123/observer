@@ -74,3 +74,25 @@ export const archivePwdGet = (path: string) =>
   invoke<string | null>("archive_pwd_get", { path });
 export const archivePwdSet = (path: string, pwd: string) =>
   invoke<void>("archive_pwd_set", { path, pwd });
+
+// ---- task2 二:SQLite 浏览(后端 rusqlite 只读;铁律 2:IPC 只回 JSON,字节不出库) ----
+export interface SqliteTable {
+  name: string;
+  kind: "table" | "view";
+  /** 建表 DDL(结构面板) */
+  ddl: string;
+}
+export interface SqlitePage {
+  columns: string[];
+  /** 值为 JSON:null / 数字 / 字符串(BLOB 已在后端转占位符) */
+  rows: unknown[][];
+  total: number;
+}
+export type SqliteErr =
+  | { kind: "not_found"; message?: string }
+  | { kind: "not_sqlite"; message?: string }
+  | { kind: "open_failed"; message?: string }
+  | { kind: "query_failed"; message?: string };
+export const sqliteTables = (path: string) => invoke<SqliteTable[]>("sqlite_tables", { path });
+export const sqlitePage = (path: string, table: string, offset: number, limit?: number) =>
+  invoke<SqlitePage>("sqlite_page", { path, table, offset, limit: limit ?? null });

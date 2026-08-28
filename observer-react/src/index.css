@@ -122,3 +122,12 @@ body {
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
   background-color: #20262e;
 }
+
+/* docx 预览(task2 二):抵消 Tailwind v4 preflight 对注入文档 DOM 的干扰。
+   preflight 是全局的,会打进 docx-preview 注入的内容——img{max-width:100%;height:auto}
+   毁版式、ol/ul 去列表符、表格边框塌缩;:where() 低特异性回滚到 UA 默认。
+   docx-preview 自身的 <style> 注入在组件内 styleRef 容器,随卸载清理。 */
+.docx-scope :where(img, video) { max-width: none; height: revert; }
+.docx-scope :where(ol, ul) { list-style: revert; margin: revert; padding: revert; }
+.docx-scope :where(table) { border-collapse: revert; }
+.docx-scope :where(p) { margin: revert; }

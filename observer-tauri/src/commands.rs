@@ -190,11 +190,13 @@ pub fn detect_format(path: String) -> Result<DetectResult, String> {
     let ext = ext_of(p);
     let mut kind = formats::kind_for_ext(&ext).to_string();
 
-    // 歧义/空扩展名/archive 类 → 读文件头嗅探兜底(zip 族不看扩展名下结论:
-    // jar/epub/docx/pptx 靠包内特征条目细分,task2 §2)
+    // 歧义/空扩展名/archive·document 类 → 读文件头嗅探兜底(zip 族不看扩展名下结论:
+    // jar/epub 靠包内特征条目细分,task2 §2;document 同为 zip 容器——docx/pptx/纯 zip
+    // 伪装互纠,如假 .docx 实为普通 zip → 纠正回 archive 走目录树,task2 二)
     let mut sniffed = if matches!(ext.as_str(), "" | "json" | "m4s" | "bin" | "dat")
         || kind == "unknown"
         || kind == "archive"
+        || kind == "document"
     {
         formats::sniff(p).map(|s| s.to_string())
     } else {
@@ -300,11 +302,11 @@ mod tests {
         let d = detect_format(mk("plain.zip", &[("a.txt", "hi")])).unwrap();
         assert_eq!((d.ext.as_str(), d.kind.as_str()), ("zip", "archive"));
 
-        // jar / docx / epub:细分上报 sniffed,kind archive
+        // jar / docx / epub:细分上报 sniffed;jar/epub → archive,docx → document(task2 二)
         let d = detect_format(mk("j.jar", &[("META-INF/MANIFEST.MF", "Manifest-Version: 1.0")])).unwrap();
         assert_eq!((d.sniffed.as_deref(), d.kind.as_str()), (Some("jar"), "archive"));
         let d = detect_format(mk("w.docx", &[("[Content_Types].xml", "<T/>"), ("word/document.xml", "<d/>")])).unwrap();
-        assert_eq!((d.sniffed.as_deref(), d.kind.as_str()), (Some("docx"), "archive"));
+        assert_eq!((d.sniffed.as_deref(), d.kind.as_str()), (Some("docx"), "document"));
         let d = detect_format(mk("b.epub", &[("mimetype", "application/epub+zip")])).unwrap();
         assert_eq!((d.sniffed.as_deref(), d.kind.as_str()), (Some("epub"), "archive"));
 
