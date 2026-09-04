@@ -1,6 +1,6 @@
 # Obverser — 格式方法表（什么格式用什么库/方法）
 
-> 版本：v0.3（2026-08-29，关联文档调整；v0.2 新增 §9 压缩包）
+> 版本：v0.4（2026-08-31，§2/§6 登记 CAD：DXF 自绘接入、DWG 占位；v0.3 关联文档调整；v0.2 新增 §9 压缩包）
 > 关联文档：[design.md](design.md)（设计理念）· [framework.md](framework.md)（框架选型与铁律限制）· [layout.md](layout.md)（布局与功能）
 > 本文档是"格式 → 识别方法 → 预览方案 → 库"的单一索引，新增格式时在此登记。
 
@@ -31,6 +31,7 @@
 | RIFF/AIFF/Ogg/FLAC 等音频容器 | 各自魔数（`RIFF`/`FORM`/`OggS`/`fLaC`） |
 | dotLottie(.lottie)/3MF/Office | ZIP 魔数 + 内部结构（`.lottie` 含 manifest） |
 | zip / RAR4 / RAR5 / 7z | 魔数 `PK\x03\x04`（空包 `PK\x05\x06`）/ `Rar!\x1A\x07\x00` / `Rar!\x1A\x07\x01\x00` / `7z\xBC\xAF\x27\x1C`；zip 再按包内特征细分容器（§9.1） |
+| DWG | 头 6 字节 `AC10` + 两位数字（版本码 AC1015=2000 … AC1032=2018+，含老版 AC1009）；须在文本嗅探前。命中仅纠正 kind，前端给"闭源格式，请导出 DXF"占位（§6） |
 
 **B 站缓存特例**：同目录成对的 `video.m4s` + `audio.m4s` → FFmpeg 双输入合并（`-i video.m4s -i audio.m4s`），否则单放无声。
 
@@ -82,8 +83,10 @@ WebView WebGL 渲染，与 Electron 零差距。[three.js loaders](https://mcpma
 | 覆盖度 | 格式 |
 |---|---|
 | 开箱即用 | GLTF/GLB（含 Draco/KTX2/Meshopt、骨骼动画）、OBJ+MTL、FBX、STL、PLY、DAE、3DS、3MF、PCD、BVH、VOX |
+| 自绘接入 | **DXF**（CAD 图纸，task2 三）：[dxf-parser](https://github.com/gdsestimating/dxf-parser) 解析 + 合并单 LineSegments（ACI 顶点色，1 draw call；线/弧/圆/椭圆/样条/块引用，文字/标注/填充不渲染）。注意 **three 官方从无 DXFLoader**；平面图纸初始正视图（ThreeView 按包围盒自适应） |
+| 占位识别 | **DWG**（AutoCAD 闭源，无许可干净的开源解析器）：魔数识别（§2）+ 前端占位提示，引导导出 DXF |
 | 部分支持 | USDZ（材质复杂时丢东西） |
-| 远期目标 | STEP/IGES/3DM（CAD，需 OpenCascade 级依赖，不碰首期） |
+| 远期目标 | STEP/IGES/3DM（机械 CAD，需 OpenCascade 级依赖；如做可走 occt-import-js WASM 转 mesh 进本管道，不碰首期） |
 
 ## 7. 动效与文档
 
@@ -137,4 +140,5 @@ WebView WebGL 渲染，与 Electron 零差距。[three.js loaders](https://mcpma
 - [rawler (dnglab)](https://github.com/dnglab/dnglab) · [zenraw](https://github.com/imazen/zenraw) · [imazen/heic](https://github.com/imazen/heic-decoder-rs) · [libheif-rs](https://crates.io/crates/libheif-rs)
 - [image](https://crates.io/crates/image) · [psd](https://crates.io/crates/psd) · [resvg](https://crates.io/crates/resvg)
 - [three.js loaders](https://mcpmarket.com/tools/skills/three-js-asset-loaders) · [vextrude 3D 转换器](https://vextrude.com/3d-converter) · [next3d 格式列表](https://next3d.ai/viewer)
+- [dxf-parser](https://github.com/gdsestimating/dxf-parser)（DXF 解析，自备 ACI 色表；注意 ARC/CIRCLE 角度它已转弧度、INSERT rotation 仍为度）
 - [rustysynth](https://lib.rs/crates/rustysynth) · [lottie-web](https://github.com/airbnb/lottie-web)

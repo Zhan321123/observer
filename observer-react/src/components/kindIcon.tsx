@@ -11,6 +11,7 @@ import {
   FileArchive,
   Type,
   Database,
+  DraftingCompass,
   type LucideIcon,
 } from "lucide-react";
 import type { FileKind } from "../types/file";
@@ -27,6 +28,8 @@ export const KIND_ICON: Record<FileKind, { Icon: LucideIcon; cls: string }> = {
   sqlite: { Icon: Database, cls: "text-amber-400/80" },
   pdf: { Icon: BookOpen, cls: "text-red-400/80" },
   threed: { Icon: Boxes, cls: "text-amber-400/80" },
+  // DWG(AutoCAD 闭源):仅识别占位,与 threed 的 dxf 区分
+  dwg: { Icon: DraftingCompass, cls: "text-amber-400/80" },
   anim: { Icon: Sparkles, cls: "text-fuchsia-400/80" },
   markdown: { Icon: FileText, cls: "text-indigo-300/80" },
   text: { Icon: FileText, cls: "text-text-dim" },

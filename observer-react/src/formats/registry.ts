@@ -11,6 +11,7 @@ import { sqliteHandler } from "./handlers/sqlite";
 import { archiveHandler } from "./handlers/archive";
 import { pdfHandler } from "./handlers/pdf";
 import { threedHandler } from "./handlers/threed";
+import { dwgHandler } from "./handlers/dwg";
 import { animHandler } from "./handlers/anim";
 import { textHandler } from "./handlers/text";
 import { PlaceholderView } from "../components/preview/PlaceholderView";
@@ -31,6 +32,7 @@ const handlers: FormatHandler[] = [
   archiveHandler,
   pdfHandler,
   threedHandler,
+  dwgHandler,
   animHandler,
   textHandler,
 ];

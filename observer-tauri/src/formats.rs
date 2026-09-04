@@ -41,9 +41,12 @@ pub fn kind_for_ext(ext: &str) -> &'static str {
         // PDF(第三批:pdf.js 渲染)
         "pdf" => "pdf",
 
-        // 3D 模型(M4:three.js loaders)
+        // 3D 模型(M4:three.js loaders;dxf 为 CAD 图纸,task2 三,走同一管道自绘)
         "gltf" | "glb" | "obj" | "fbx" | "stl" | "ply" | "dae" | "3ds" | "3mf" | "pcd"
-        | "bvh" | "vox" => "threed",
+        | "bvh" | "vox" | "dxf" => "threed",
+
+        // DWG(AutoCAD 闭源二进制,task2 三):独立 kind,前端只给占位说明(引导导出 DXF)
+        "dwg" => "dwg",
 
         // 动效(M4:dotLottie / Rive / SVGA;Lottie 的 .json 走 text 嗅探)
         "lottie" | "riv" | "svga" => "anim",
@@ -83,6 +86,9 @@ pub fn kind_for_sniff(sniff: &str, fallback: &str) -> &'static str {
         // 字体/SQLite 魔数(task2 二):伪装成 .bin 的字体/库也会被纠正
         "ttf" | "otf" | "woff" | "woff2" | "ttc" => "font",
         "sqlite" => "sqlite",
+        // DWG 魔数(task2 三):版本码 AC1015/AC1018/AC1021/AC1024/AC1027/AC1032,
+        // 统一前缀 AC10 + 两位数字;命中只纠正 kind(前端仍为占位说明)
+        "dwg" => "dwg",
         _ => match fallback {
             "image" => "image",
             "video" => "video",
@@ -97,6 +103,7 @@ pub fn kind_for_sniff(sniff: &str, fallback: &str) -> &'static str {
             "anim" => "anim",
             "archive" => "archive",
             "text" => "text",
+            "dwg" => "dwg",
             _ => "unknown",
         },
     }
@@ -205,6 +212,12 @@ pub fn sniff(path: &Path) -> Option<&'static str> {
         return Some("sqlite");
     }
 
+    // DWG(task2 三):头 6 字节版本码 "AC10" + 两位数字(AC1015=2000 … AC1032=2018+)。
+    // 须在文本嗅探之前——前缀是可打印 ASCII,会被 sniff_text 误吞成 text。
+    if n >= 6 && &b[0..4] == b"AC10" && b[4].is_ascii_digit() && b[5].is_ascii_digit() {
+        return Some("dwg");
+    }
+
     // Lottie 嗅探:JSON 且含 v/fr/ip/op/layers 五件套(method.md §2)
     if let Some(text) = sniff_text(b) {
         if looks_like_lottie(text) {
@@ -246,8 +259,8 @@ mod tests {
     /// kind_for_ext 须与前端 registry.ts 的 handler 覆盖一致(单一事实来源,两端对齐)。
     #[test]
     fn kind_for_ext_covers_threed_and_anim() {
-        // 3D 模型(M4)
-        for e in ["gltf", "glb", "obj", "fbx", "stl", "ply", "dae", "3ds", "3mf", "pcd", "bvh", "vox"] {
+        // 3D 模型(M4;dxf 为 CAD 图纸,task2 三)
+        for e in ["gltf", "glb", "obj", "fbx", "stl", "ply", "dae", "3ds", "3mf", "pcd", "bvh", "vox", "dxf"] {
             assert_eq!(kind_for_ext(e), "threed", "ext {e} 应为 threed");
         }
         // 动效(M4:dotLottie/Rive/SVGA)
@@ -337,7 +350,18 @@ mod tests {
         assert_eq!(kind_for_sniff("something-else", "font"), "font");
         assert_eq!(kind_for_sniff("something-else", "sqlite"), "sqlite");
         assert_eq!(kind_for_sniff("something-else", "document"), "document");
+        assert_eq!(kind_for_sniff("something-else", "dwg"), "dwg");
         assert_eq!(kind_for_sniff("lottie", "text"), "text");
+    }
+
+    /// CAD(task2 三):dxf 挂 threed 管道;dwg 独立 kind(前端占位),魔数嗅探可识别伪装扩展。
+    #[test]
+    fn kind_for_cad() {
+        assert_eq!(kind_for_ext("dxf"), "threed");
+        assert_eq!(kind_for_ext("dwg"), "dwg");
+        assert_eq!(kind_for_sniff("dwg", "unknown"), "dwg");
+        // 嗅探不认识时保留 ext 判断
+        assert_eq!(kind_for_sniff("something-else", "dwg"), "dwg");
     }
 
     /// 字体/SQLite 魔数嗅探(task2 二):伪装成 .bin 等未知扩展名也能识别。
@@ -355,5 +379,8 @@ mod tests {
         check("woff.bin", b"wOFF\0\0\0\0", "woff");
         check("woff2.bin", b"wOF2\0\0\0\0", "woff2");
         check("sqlite.bin", b"SQLite format 3\0rest", "sqlite");
+        // DWG 魔数(task2 三):AC10 版本码前缀(含老版本 AC1009 等)
+        check("dwg.bin", b"AC1015\0\0\0", "dwg");
+        check("dwg-old.bin", b"AC1009\0\0", "dwg");
     }
 }

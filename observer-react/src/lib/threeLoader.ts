@@ -16,6 +16,8 @@ import { ThreeMFLoader } from "three/examples/jsm/loaders/3MFLoader.js";
 import { PCDLoader } from "three/examples/jsm/loaders/PCDLoader.js";
 import { BVHLoader } from "three/examples/jsm/loaders/BVHLoader.js";
 import { VOXLoader } from "three/examples/jsm/loaders/VOXLoader.js";
+import { buildDxfObject } from "./dxfToThree";
+import { decodeTextBytes } from "./decodeText";
 import { assetUrl, allowAssetPath } from "./tauri";
 import type { FileRef } from "../types/file";
 
@@ -38,6 +40,7 @@ export interface LoadedModel {
 /** 本 handler 认识的 3D 扩展名(与 formats.rs kind_for_ext、registry 对齐) */
 export const THREE_EXTS = [
   "gltf", "glb", "obj", "fbx", "stl", "ply", "dae", "3ds", "3mf", "pcd", "bvh", "vox",
+  "dxf", // CAD 图纸(dxfToThree 自绘,非 three loader;threed.tsx 处有同名清单)
 ];
 
 /** 把模型同目录的相对资源引用(gltf .bin / 贴图、mtl 贴图)解析为绝对路径。 */
@@ -200,6 +203,12 @@ export async function loadThreeModel(file: FileRef): Promise<LoadedModel> {
     case "vox": {
       const result = new VOXLoader(manager).parse(buf);
       object = result.scene;
+      break;
+    }
+    case "dxf": {
+      // DXF(CAD 图纸):文本格式,可能为 GBK 中文注释 → 复用编码探测;
+      // dxf-parser 同步解析,大文件会卡主线程(见 dxfToThree TODO)
+      object = buildDxfObject(decodeTextBytes(buf)).object;
       break;
     }
     default:

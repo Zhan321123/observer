@@ -18,8 +18,9 @@ const LABELS: Record<string, string> = {
   sqlite: "SQLite 数据库",
   archive: "压缩包",
   pdf: "PDF",
-  threed: "3D 模型",
+  threed: "3D 模型 / CAD(DXF)",
   anim: "动效",
+  dwg: "DWG(闭源,仅识别)",
   text: "文本 / 代码",
 };
 

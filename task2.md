@@ -5,9 +5,8 @@
 ## 二、低成本高价值(纯前端库,走 native 策略)
 
 - [ ] **EPUB 渲染**(电子书,zip 容器)— epub.js 阅读器;双身份切换"目录树/阅读器"
-- [ ] **Hex 视图(兜底)**(任意未知二进制)— 十六进制 + ASCII 对照预览;Quick Look 都没有的差异化功能,前端或 Rust 均可
+- [ ] **Hex 视图(兜底)**(任意未知二进制)— 十六进制 + ASCII 对照预览;前端或 Rust 均可
 - [ ] **字幕 srt/vtt/ass**(影视字幕:SubRip / WebVTT / Advanced SubStation Alpha)— 前端解析时间轴 + 文本列表;ass 可用 libass-wasm 真渲染样式特效
-- [ ] **.lnk**(Windows 快捷方式)— Rust 解析,显示目标路径/参数/图标,Windows 刚需
 - [ ] **GLB 的 Draco/KTX2 压缩补强**(Draco 网格压缩 / KTX2 纹理压缩的 glTF 二进制)— three.js DRACOLoader + KTX2Loader(需带 draco/ktx2 wasm 资产);线上大量 GLB 是压缩的,当前会加载失败,属于对现有 3D 支持的修复性补强
 
 ## 三、中成本
@@ -20,12 +19,10 @@
 - [ ] **MHT/MHTML**(单文件网页,浏览器"另存为"产物,把 HTML+资源打包成 MIME)— WebView blob 渲染
 - [ ] **EML**(标准邮件文件,Outlook/Foxmail 导出的 MIME 报文)— 前端 MIME 解析:正文 + 附件列表
 - [ ] **MOBI/AZW3**(Kindle 电子书)— mobi crate(纯 Rust)→ 提取文本/封面渲染
-- [ ] **DXF**(CAD 图纸交换格式,工程制图通用二维矢量)— three.js DXFLoader,与现有 3D 管道同构
 - [ ] **WRL(VRML,早期 Web 3D 场景描述)** — three.js VRMLLoader,同上
 - [ ] **torrent**(BitTorrent 种子文件,bencode 编码)— bencode 解析 → 文件列表表格,体验对齐压缩包目录树
 - [ ] **NFO**(老派 warez/演示场景信息文件,CP437 编码的 ASCII art)— CP437 解码(decodeText 已有编码检测基建)+ 等宽字体展示
 - [ ] **GeoJSON / GPX / KML**(地理数据:GPS 轨迹 / 地图标注 / Google Earth)— canvas 折线绘制(无底图,离线友好)或 leaflet(需在线瓦片)
-- [ ] **PE exe/dll**(Windows 可执行文件/动态库)— pelite crate:提取版本资源/图标/导入表,展示元信息卡片
 
 ## 四、已有挂起项的出路
 

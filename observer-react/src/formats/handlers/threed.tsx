@@ -24,8 +24,10 @@ export function ThreeViewEntry(props: PreviewProps) {
 
 // 3D 模型(M4):three.js loaders 渲染(gltf/glb/obj/fbx/stl/ply/dae/3ds/3mf/pcd/bvh/vox),
 // 滚轮缩放 + 拖动旋转,视角持久化(threed_camera),激活视口配额降级为截图。
+// dxf(CAD 图纸,task2 三)同走本管道:dxfToThree 自绘 LineSegments;
+// 此清单须与 threeLoader.THREE_EXTS 手工同步(那边在懒加载 chunk,不能静态引入)。
 const THREE_EXTS = [
-  "gltf", "glb", "obj", "fbx", "stl", "ply", "dae", "3ds", "3mf", "pcd", "bvh", "vox",
+  "gltf", "glb", "obj", "fbx", "stl", "ply", "dae", "3ds", "3mf", "pcd", "bvh", "vox", "dxf",
 ];
 
 export const threedHandler: FormatHandler = {

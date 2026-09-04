@@ -139,7 +139,10 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
     const fov = (cam.fov * Math.PI) / 180;
     const dist = (maxDim / (2 * Math.tan(fov / 2))) * 1.5;
-    const dir = new THREE.Vector3(1, 0.65, 1).normalize();
+    // 平面内容(如 DXF 图纸,z 向跨度≈0)→ 正视图直面图纸;
+    // 立体模型 → 斜侧视角。DXF 坐标 Y 向上,图纸躺在 XY 平面,+Z 正对即是俯看图纸。
+    const flat = size.z <= Math.max(size.x, size.y) * 1e-3;
+    const dir = (flat ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0.65, 1)).normalize();
     cam.position.copy(center).addScaledVector(dir, dist);
     cam.near = Math.max(dist / 1000, 0.001);
     cam.far = dist * 1000;

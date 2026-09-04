@@ -14,6 +14,7 @@ export type FileKind =
   | "threed"
   | "anim"
   | "archive"
+  | "dwg"
   | "unknown";
 
 /** list_dir 返回的目录项 */
