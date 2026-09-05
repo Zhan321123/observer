@@ -33,6 +33,7 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
   const transparencyGrid = useCellViewStore((s) => s.views[cellId]?.transparencyGrid) ?? false;
   const svgMode = useCellViewStore((s) => s.views[cellId]?.svgMode) ?? "preview";
   const defaultFit = useSettingsStore((s) => s.imageDefaultFit);
+  const imageScaleMode = useSettingsStore((s) => s.imageScaleMode);
   const setFullView = useCellViewStore((s) => s.setFullView);
   const setFullScreen = useCellViewStore((s) => s.setFullScreen);
 
@@ -79,8 +80,8 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
     let cancelled = false;
     setSvgText(null);
     readTextFile(file.path)
-      .then((t) => {
-        if (!cancelled) setSvgText(t);
+      .then((r) => {
+        if (!cancelled) setSvgText(r.text);
       })
       .catch((e) => setView(cellId, { error: String(e) }));
     return () => {
@@ -335,6 +336,8 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
           transformOrigin: "0 0",
           maxWidth: "none",
           maxHeight: "none",
+          // CSS 缩放算法(image-rendering,设置项;SVG 矢量不受影响)
+          imageRendering: imageScaleMode,
         }}
       />
       {/* 图片边界描边(§交互修正-图片边界):随 transform 走的 1px 双色环,透明/小图缩放平移后可辨边界。

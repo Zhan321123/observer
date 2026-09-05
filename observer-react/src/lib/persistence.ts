@@ -141,8 +141,10 @@ export function startPersistence(): void {
           mediaQuota: s.mediaQuota,
           threeDQuota: s.threeDQuota,
           imageDefaultFit: s.imageDefaultFit,
+          imageScaleMode: s.imageScaleMode,
           gridFullPolicy: s.gridFullPolicy,
           textMaxSizeMB: s.textMaxSizeMB,
+          textDefaultFontSize: s.textDefaultFontSize,
           defaultVolume: s.defaultVolume,
           historyRetention: s.historyRetention,
         })

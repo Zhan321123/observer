@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
 import { useCellViewStore } from "../stores/cellViewStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { getControl } from "../stores/cellControls";
 import { revealInExplorer, copyPath } from "../lib/tauri";
 import { formatTime } from "../lib/format";
@@ -99,6 +100,8 @@ export function FunctionBar({
   const rate = view?.rate ?? 1;
   const scale = view?.scale ?? 1;
   const fitMode = view?.fitMode;
+  // 文本字号兜底 = 设置的默认字号(§新增;TextView 未上报时,如 markdown 首帧)
+  const textDefaultFontSize = useSettingsStore((s) => s.textDefaultFontSize);
   // SQLite 分页区间(SqliteView PAGE_SIZE=100;仅显示用)
   const sqTotal = view?.sqliteTotal ?? 0;
   const sqOffset = view?.sqliteOffset ?? 0;
@@ -234,6 +237,21 @@ export function FunctionBar({
               <span className="shrink-0 text-[11px] tabular-nums text-text-dim">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
+              {/* 音频:宫格主体显示模式(实时频谱柱形图默认/滚动波形/无,§交互升级) */}
+              {kind === "audio" && (
+                <select
+                  className="rounded bg-panel-2 px-1 text-[11px] text-text outline-none"
+                  value={view?.audioDisplay ?? "bars"}
+                  onChange={(e) =>
+                    ctl()?.setAudioDisplay?.(e.target.value as "bars" | "wave" | "none")
+                  }
+                  title="音频显示模式"
+                >
+                  <option value="bars">频谱图</option>
+                  <option value="wave">滚动波形</option>
+                  <option value="none">无</option>
+                </select>
+              )}
               <BarButton title={volume === 0 ? "取消静音" : "静音"} onClick={() => ctl()?.setVolume?.(volume === 0 ? 1 : 0)}>
                 {volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </BarButton>
@@ -284,15 +302,25 @@ export function FunctionBar({
                   {view?.mdMode === "text" ? <Eye size={16} /> : <FileCode size={16} />}
                 </BarButton>
               )}
-              {/* lottie(.json):动画 / 文本 */}
+              {/* lottie(.json):动画 / 文本;兼容模式徽标(表达式失败自动剥除后重载) */}
               {isLottie && (
-                <BarButton
-                  title={view?.lottieMode === "text" ? "切换到动画" : "切换到文本"}
-                  active={view?.lottieMode !== "text"}
-                  onClick={() => ctl()?.toggleLottieMode?.()}
-                >
-                  {view?.lottieMode === "text" ? <Film size={16} /> : <FileCode size={16} />}
-                </BarButton>
+                <>
+                  <BarButton
+                    title={view?.lottieMode === "text" ? "切换到动画" : "切换到文本"}
+                    active={view?.lottieMode !== "text"}
+                    onClick={() => ctl()?.toggleLottieMode?.()}
+                  >
+                    {view?.lottieMode === "text" ? <Film size={16} /> : <FileCode size={16} />}
+                  </BarButton>
+                  {view?.lottieCompat && (
+                    <span
+                      className="shrink-0 rounded bg-amber-500/20 px-1.5 text-[10px] leading-5 text-amber-400"
+                      title="表达式渲染失败,已禁用表达式后以兼容模式重载(丢失回弹等次级动效)"
+                    >
+                      兼容模式
+                    </span>
+                  )}
+                </>
               )}
               {/* csv/tsv:表格 / 文本源码 */}
               {isCsv && (
@@ -307,7 +335,9 @@ export function FunctionBar({
               <BarButton title="缩小字号" onClick={() => ctl()?.zoomText?.(-1)}>
                 <ZoomOut size={16} />
               </BarButton>
-              <span className="w-8 text-center text-[11px] tabular-nums text-text-dim">{view?.fontSize ?? 13}</span>
+              <span className="w-8 text-center text-[11px] tabular-nums text-text-dim">
+                {view?.fontSize ?? textDefaultFontSize}
+              </span>
               <BarButton title="放大字号" onClick={() => ctl()?.zoomText?.(1)}>
                 <ZoomIn size={16} />
               </BarButton>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { useSettingsStore, type GridFullPolicy } from "../stores/settingsStore";
+import { useSettingsStore, type GridFullPolicy, type ImageScaleMode } from "../stores/settingsStore";
 import { RecordManagerDialog } from "./RecordManagerDialog";
 
 interface Props {
@@ -14,13 +14,17 @@ export function SettingsDialog({ open, onClose }: Props) {
   const mediaQuota = useSettingsStore((s) => s.mediaQuota);
   const threeDQuota = useSettingsStore((s) => s.threeDQuota);
   const imageDefaultFit = useSettingsStore((s) => s.imageDefaultFit);
+  const imageScaleMode = useSettingsStore((s) => s.imageScaleMode);
   const gridFullPolicy = useSettingsStore((s) => s.gridFullPolicy);
   const setMediaQuota = useSettingsStore((s) => s.setMediaQuota);
   const setThreeDQuota = useSettingsStore((s) => s.setThreeDQuota);
   const setImageDefaultFit = useSettingsStore((s) => s.setImageDefaultFit);
+  const setImageScaleMode = useSettingsStore((s) => s.setImageScaleMode);
   const setGridFullPolicy = useSettingsStore((s) => s.setGridFullPolicy);
   const textMaxSizeMB = useSettingsStore((s) => s.textMaxSizeMB);
   const setTextMaxSizeMB = useSettingsStore((s) => s.setTextMaxSizeMB);
+  const textDefaultFontSize = useSettingsStore((s) => s.textDefaultFontSize);
+  const setTextDefaultFontSize = useSettingsStore((s) => s.setTextDefaultFontSize);
   const defaultVolume = useSettingsStore((s) => s.defaultVolume);
   const setDefaultVolume = useSettingsStore((s) => s.setDefaultVolume);
 
@@ -90,7 +94,7 @@ export function SettingsDialog({ open, onClose }: Props) {
 
           <section>
             <h3 className="mb-2 text-xs font-medium text-text-dim">图片</h3>
-            <label className="flex items-center justify-between text-xs">
+            <label className="mb-2 flex items-center justify-between text-xs">
               <span>默认缩放模式</span>
               <select
                 className="rounded border border-line bg-panel-2 px-2 py-1 outline-none"
@@ -101,11 +105,23 @@ export function SettingsDialog({ open, onClose }: Props) {
                 <option value="actual">1:1(实际像素)</option>
               </select>
             </label>
+            <label className="flex items-center justify-between text-xs">
+              <span>缩放渲染(image-rendering)</span>
+              <select
+                className="rounded border border-line bg-panel-2 px-2 py-1 outline-none"
+                value={imageScaleMode}
+                onChange={(e) => setImageScaleMode(e.target.value as ImageScaleMode)}
+              >
+                <option value="pixelated">像素锐利(最近邻)</option>
+                <option value="auto">平滑(浏览器默认)</option>
+                <option value="crisp-edges">高对比边缘(旧版 WebView 等效平滑)</option>
+              </select>
+            </label>
           </section>
 
           <section>
             <h3 className="mb-2 text-xs font-medium text-text-dim">文本</h3>
-            <label className="flex items-center justify-between text-xs">
+            <label className="mb-2 flex items-center justify-between text-xs">
               <span>文本最大打开大小 (MB,超出需确认)</span>
               <input
                 type="number"
@@ -114,6 +130,17 @@ export function SettingsDialog({ open, onClose }: Props) {
                 className="w-16 rounded border border-line bg-panel-2 px-2 py-1 text-right outline-none"
                 value={textMaxSizeMB}
                 onChange={(e) => setTextMaxSizeMB(Number(e.target.value))}
+              />
+            </label>
+            <label className="flex items-center justify-between text-xs">
+              <span>默认字号(新打开的文本文件,8-32)</span>
+              <input
+                type="number"
+                min={8}
+                max={32}
+                className="w-16 rounded border border-line bg-panel-2 px-2 py-1 text-right outline-none"
+                value={textDefaultFontSize}
+                onChange={(e) => setTextDefaultFontSize(Number(e.target.value))}
               />
             </label>
           </section>

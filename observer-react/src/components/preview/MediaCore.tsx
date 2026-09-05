@@ -7,8 +7,10 @@ import { useCellViewStore, type FitMode } from "../../stores/cellViewStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { registerControl } from "../../stores/cellControls";
 import { VideoSeekBar } from "./VideoSeekBar";
-import { Waveform } from "./Waveform";
-import { SeekBar } from "./SeekBar";
+import { WaveformSeekBar } from "./WaveformSeekBar";
+import { SpectrumBars } from "./SpectrumBars";
+import { ScrollWaveform } from "./ScrollWaveform";
+import { useAudioAnalyser } from "../../hooks/useAudioAnalyser";
 import type { PreviewProps } from "../../formats/types";
 
 const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -41,6 +43,8 @@ export function MediaCore({
   const view = useCellViewStore((s) => s.views[cellId]);
   const setFullView = useCellViewStore((s) => s.setFullView);
   const setFullScreen = useCellViewStore((s) => s.setFullScreen);
+  // 音频实时分析(Web Audio Analyser):仅音频格接入(频谱柱形图数据源)
+  const analyser = useAudioAnalyser(mediaRef, !isVideo);
 
   const playing = view?.playing ?? false;
   const currentTime = view?.currentTime ?? 0;
@@ -213,6 +217,8 @@ export function MediaCore({
           setFitModeLocal("free");
           setView(cellId, { fitMode: "free", scale: s });
         },
+        // 音频:宫格主体显示模式(频谱图/波形/无,§新增;功能条切换)
+        setAudioDisplay: (m) => setView(cellId, { audioDisplay: m }),
         enterFullView: () => setFullView(cellId),
         enterFullScreen: () => {
           setFullView(cellId);
@@ -252,17 +258,33 @@ export function MediaCore({
         {isVideo ? (
           <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={mediaSrc} style={mediaStyle} playsInline />
         ) : (
-          // 音频主体:文件名 + 声波可视化(§修改点2;seek 由控制条 range 条负责)
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3">
-            <audio ref={mediaRef as React.RefObject<HTMLAudioElement>} src={mediaSrc} />
-            <div className="max-w-full truncate text-xs text-text-dim">{file.name}</div>
-            <Waveform
-              path={waveformPath ?? file.path}
-              duration={duration}
-              value={currentTime}
-              height={64}
-            />
-          </div>
+          // 音频主体:文件名 + 实时可视化(§交互升级两态:频谱柱形图默认/滚动波形,功能条切换;
+          // MIDI 用合成 WAV 取峰值)。crossOrigin 供 Web Audio 取实时分析数据(asset/流均带 ACAO)
+          (() => {
+            const audioDisplay = view?.audioDisplay ?? "bars";
+            return (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3">
+                <audio
+                  ref={mediaRef as React.RefObject<HTMLAudioElement>}
+                  src={mediaSrc}
+                  crossOrigin="anonymous"
+                />
+                <div className="max-w-full truncate text-xs text-text-dim">{file.name}</div>
+                {audioDisplay === "bars" && <SpectrumBars analyser={analyser} />}
+                {audioDisplay === "wave" && (
+                  <ScrollWaveform
+                    path={waveformPath ?? file.path}
+                    duration={duration}
+                    value={currentTime}
+                    onSeek={(t) => {
+                      const m = mediaRef.current;
+                      if (m) m.currentTime = t;
+                    }}
+                  />
+                )}
+              </div>
+            );
+          })()
         )}
       </div>
 
@@ -282,7 +304,7 @@ export function MediaCore({
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
         {isVideo ? (
-          // 视频:进度条带悬停预览(M1)
+          // 视频:进度条=音轨振幅波形 + 悬停预览(M1)
           <VideoSeekBar
             path={file.path}
             duration={duration}
@@ -293,8 +315,9 @@ export function MediaCore({
             }}
           />
         ) : (
-          // 音频:普通 range 进度条(§修改点2),拖动即 seek(本地文件寻址便宜)
-          <SeekBar
+          // 音频:波形进度条(§新增),拖动即 seek(本地文件寻址便宜)
+          <WaveformSeekBar
+            path={waveformPath ?? file.path}
             duration={duration}
             value={currentTime}
             live
@@ -302,7 +325,6 @@ export function MediaCore({
               const m = mediaRef.current;
               if (m) m.currentTime = t;
             }}
-            className="h-1 min-w-0 flex-1 accent-brand-bright"
           />
         )}
         <button

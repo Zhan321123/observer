@@ -4,10 +4,11 @@ import DOMPurify from "dompurify";
 import lottie from "lottie-web";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { readTextFile, fileStat, resolveLink, assetUrl, allowAssetPath } from "../../lib/tauri";
+import { readTextFile, fileStat, resolveLink } from "../../lib/tauri";
 import { docPosGet, docPosSet } from "../../lib/persist";
 import { highlight } from "../../lib/highlight";
-import { decodeTextBytes, parseDelimited } from "../../lib/decodeText";
+import { parseDelimited } from "../../lib/decodeText";
+import { guardSize, stripExpressions } from "../../lib/lottieCompat";
 import { DataTable, TABLE_MAX_ROWS, TABLE_MAX_COLS } from "./DataTable";
 import { clamp, formatBytes } from "../../lib/format";
 import { useCellViewStore } from "../../stores/cellViewStore";
@@ -31,7 +32,11 @@ const clampFont = (v: number) => Math.round(clamp(v, 8, 32));
  */
 export function TextView({ file, cellId, active }: PreviewProps) {
   const [text, setText] = useState<string | null>(null);
-  const [fontSize, setFontSize] = useState(13);
+  // 默认字号来自设置(懒初始化:App 在 bootstrap 还原设置后才渲染,新打开的文件以此起步;
+  // 每文件 doc_position.zoom 恢复在其后,优先级更高)
+  const [fontSize, setFontSize] = useState(() =>
+    clampFont(useSettingsStore.getState().textDefaultFontSize)
+  );
   const [lineNumbers, setLineNumbers] = useState(false);
   const [wordWrap, setWordWrap] = useState(false);
   const [mdMode, setMdMode] = useState<"preview" | "text">("preview");
@@ -44,7 +49,7 @@ export function TextView({ file, cellId, active }: PreviewProps) {
   const animRef = useRef<ReturnType<typeof lottie.loadAnimation> | null>(null); // 点击播放/暂停用
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 卸载时 React 会先置空 scrollRef,故用 posRef 记最新滚动/字号供保存
-  const posRef = useRef({ x: 0, y: 0, fontSize: 13 });
+  const posRef = useRef({ x: 0, y: 0, fontSize: clampFont(useSettingsStore.getState().textDefaultFontSize) });
   const setView = useCellViewStore((s) => s.setView);
   const textMaxSizeMB = useSettingsStore((s) => s.textMaxSizeMB);
   const placeFile = useGridStore((s) => s.placeFile);
@@ -57,7 +62,9 @@ export function TextView({ file, cellId, active }: PreviewProps) {
   const showCsvTable = isCsv && csvMode === "table";
   const highlightExt = isMd ? "md" : file.ext;
 
-  // 读文件:先查大小,超阈值且未确认 → 提示;否则读入
+  // 读文件:先查大小,超阈值且未确认 → 提示;否则读入。
+  // 统一走 read_text_file(后端 chardetng 编码探测:GBK/Big5/UTF-16 等不乱码),
+  // 并把检测出的编码名写进视图态(文件信息框"编码"行)。
   useEffect(() => {
     let cancelled = false;
     setText(null);
@@ -70,23 +77,18 @@ export function TextView({ file, cellId, active }: PreviewProps) {
           setOversize(st.size);
           return undefined;
         }
-        // csv/tsv 走 asset:// 字节 + 编码探测(GBK 中文表不乱码);其余走 readTextFile
-        const load = isCsv
-          ? (async () => {
-              await allowAssetPath(file.path).catch(() => {});
-              const buf = await fetch(assetUrl(file.path)).then((r) => r.arrayBuffer());
-              return decodeTextBytes(buf);
-            })()
-          : readTextFile(file.path);
-        return load.then((t) => {
-          if (!cancelled) setText(t);
-        });
+        return readTextFile(file.path);
+      })
+      .then((r) => {
+        if (cancelled || !r) return;
+        setText(r.text);
+        setView(cellId, { textEncoding: r.encoding });
       })
       .catch((e) => setView(cellId, { error: String(e) }));
     return () => {
       cancelled = true;
     };
-  }, [file.path, cellId, setView, textMaxSizeMB, confirmed, isCsv]);
+  }, [file.path, cellId, setView, textMaxSizeMB, confirmed]);
 
   const html = useMemo(() => {
     if (text == null) return "";
@@ -113,27 +115,59 @@ export function TextView({ file, cellId, active }: PreviewProps) {
     return { rows, totalRows, totalCols };
   }, [showCsvTable, text, file.ext]);
 
-  // Lottie 动画模式:挂载/切换时渲染,卸载/切走时销毁
+  // Lottie 动画模式:挂载/切换时渲染,卸载/切走时销毁。
+  // 兼容兜底(§修复空白):lottie-web renderFrame 吞掉每帧错误只发 'error' 事件
+  // (典型:表达式求值失败)→ 订阅该事件,首次报错时剥表达式重载一次(丢次级动效但可见)。
   useEffect(() => {
     if (!showLottie || text == null) return;
     const container = lottieRef.current;
     if (!container) return;
+    let cancelled = false;
+    let compat = false; // 已进兼容模式则不再重试(防循环)
     let anim: ReturnType<typeof lottie.loadAnimation> | null = null;
-    try {
-      anim = lottie.loadAnimation({
-        container,
-        renderer: "svg",
-        loop: true,
-        autoplay: true,
-        animationData: JSON.parse(text),
-        // best-fit:svg 撑满容器后按宽高比等比缩放、居中(task.md 交互修正)
-        rendererSettings: { preserveAspectRatio: "xMidYMid meet" },
-      });
+
+    const start = (data: Record<string, unknown>) => {
+      guardSize(data as { w?: number; h?: number });
+      try {
+        anim = lottie.loadAnimation({
+          container,
+          renderer: "svg",
+          loop: true,
+          autoplay: true,
+          animationData: data,
+          // best-fit:svg 撑满容器后按宽高比等比缩放、居中(task.md 交互修正)
+          rendererSettings: { preserveAspectRatio: "xMidYMid meet" },
+        });
+      } catch {
+        setView(cellId, { error: "Lottie JSON 解析失败" });
+        return;
+      }
       animRef.current = anim;
+      anim.addEventListener("error", () => {
+        if (compat || cancelled) return;
+        compat = true;
+        setView(cellId, { lottieCompat: true });
+        anim?.destroy();
+        animRef.current = null;
+        try {
+          // 重新 parse:lottie-web 会改写传入的 animationData 对象
+          const stripped = JSON.parse(text) as Record<string, unknown>;
+          stripExpressions(stripped);
+          start(stripped);
+        } catch {
+          setView(cellId, { error: "Lottie JSON 解析失败" });
+        }
+      });
+    };
+
+    setView(cellId, { lottieCompat: false }); // 新挂载/换文件复位徽标
+    try {
+      start(JSON.parse(text));
     } catch {
       setView(cellId, { error: "Lottie JSON 解析失败" });
     }
     return () => {
+      cancelled = true;
       animRef.current = null;
       anim?.destroy();
     };

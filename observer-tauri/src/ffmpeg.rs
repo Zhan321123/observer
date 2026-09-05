@@ -51,6 +51,17 @@ fn find_binary(name: &str) -> Option<PathBuf> {
     // None
 }
 
+/// 隐藏子进程控制台窗口:GUI 子系统(windows_subsystem="windows")下 spawn
+/// 控制台程序(ffmpeg/ffprobe)会各自分配新控制台 → 黑框一闪。CREATE_NO_WINDOW 抑制之。
+fn no_window(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+}
+
 pub fn ffmpeg_path() -> Result<PathBuf, String> {
     find_binary("ffmpeg").ok_or_else(|| {
         "未找到 ffmpeg(可设置 OBSERVER_FFMPEG 环境变量,或将 ffmpeg 置于 PATH/应用目录)".to_string()
@@ -71,10 +82,9 @@ fn tonemap_available() -> bool {
 
 fn detect_tonemap() -> bool {
     let Ok(ffmpeg) = ffmpeg_path() else { return false };
-    let Ok(out) = Command::new(ffmpeg)
-        .args(["-hide_banner", "-filters"])
-        .output()
-    else {
+    let mut cmd = Command::new(ffmpeg);
+    no_window(&mut cmd);
+    let Ok(out) = cmd.args(["-hide_banner", "-filters"]).output() else {
         return false;
     };
     let s = String::from_utf8_lossy(&out.stdout);
@@ -100,7 +110,9 @@ pub struct VideoMeta {
 
 /// 探测结果(供流管道决策 + 文件信息框)。
 pub fn probe(path: &str) -> Result<VideoMeta, String> {
-    let out = Command::new(ffprobe_path()?)
+    let mut cmd = Command::new(ffprobe_path()?);
+    no_window(&mut cmd);
+    let out = cmd
         .args([
             "-v", "quiet",
             "-print_format", "json",
@@ -234,6 +246,7 @@ fn build_ffmpeg(path: &Path, seek: f64, meta: &VideoMeta) -> Result<(Command, &'
     let pair = bilibili_pair(path).or_else(|| itag_audio_pair(path, meta));
 
     let mut cmd = Command::new(ffmpeg);
+    no_window(&mut cmd);
     cmd.arg("-hide_banner").arg("-loglevel").arg("error");
     if seek > 0.0 {
         cmd.arg("-ss").arg(format!("{seek:.3}"));
@@ -424,7 +437,28 @@ pub struct StreamState {
     pub port: u16,
 }
 
-// ---------- 缩略图(海报帧) ----------
+// ---------- 缩略图(海报帧)/ 生成物磁盘缓存 ----------
+
+/// 磁盘缓存文件的 mtime(秒;取不到记 0)。
+fn mtime_of(meta: &std::fs::Metadata) -> i64 {
+    meta.modified()
+        .ok()
+        .and_then(|x| x.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// 稳定缓存键:路径 + 长度 + mtime(+ 附加参数,如取帧秒)。文件内容变化 → 键变 → 自动失效。
+/// (修复教训:此前 thumbnail 键漏算 mtime 与取帧秒,悬停不同时间点会撞缓存。)
+fn cache_key(path: &str, len: u64, mtime: i64, extra: u64) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    path.hash(&mut h);
+    len.hash(&mut h);
+    mtime.hash(&mut h);
+    extra.hash(&mut h);
+    h.finish()
+}
 
 /// 生成视频海报帧到磁盘缓存(key = path+size+mtime+取帧秒),返回 PNG 路径(前端经 asset:// 加载)。
 #[tauri::command]
@@ -438,22 +472,7 @@ pub fn video_thumbnail(
     // 取帧时间(秒),默认 1s;按秒量化进缓存 key(进度条悬停按秒分桶 → 每时间点独立缓存且有界)。
     let t = at.unwrap_or(1.0).max(0.0);
     let t_bucket = t.round() as u64;
-    let mtime = meta_fs
-        .modified()
-        .ok()
-        .and_then(|x| x.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let key = format!("{:x}", {
-        // 稳定 key:路径 + 长度 + mtime + 取帧秒(修复:此前漏算 mtime 与 at,悬停不同时间点会撞缓存)
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        path.hash(&mut h);
-        meta_fs.len().hash(&mut h);
-        mtime.hash(&mut h);
-        t_bucket.hash(&mut h);
-        h.finish()
-    });
+    let key = format!("{:x}", cache_key(&path, meta_fs.len(), mtime_of(&meta_fs), t_bucket));
     let dir = app
         .path()
         .app_cache_dir()
@@ -465,7 +484,9 @@ pub fn video_thumbnail(
         return Ok(out.to_string_lossy().to_string());
     }
 
-    let status = Command::new(ffmpeg_path()?)
+    let mut cmd = Command::new(ffmpeg_path()?);
+    no_window(&mut cmd);
+    let status = cmd
         .args([
             "-hide_banner",
             "-loglevel",
@@ -490,22 +511,55 @@ pub fn video_thumbnail(
     }
 }
 
-// ---------- 音频波形(M3,method.md §4) ----------
+// ---------- 音频波形(M3,method.md §4;§新增:磁盘缓存) ----------
+
+/// 缓存固定分桶数:一次解码按最高保真度落盘,任意 buckets 请求由内存重分桶满足
+/// (进度条波形/主体波形/全屏均复用同一份缓存)。
+const WAVE_BUCKETS: usize = 4096;
 
 /// 抽取音频 PCM 峰值用于前端 canvas 波形(method.md §4)。
 /// ffmpeg 解码 → 单声道 s16(降采样 8kHz 控内存)→ 分桶取 [min,max] 峰值(归一化 -1..1)。
+/// 磁盘缓存 thumbs/wave_<key>.bin(键 = 路径+长度+mtime),重启不重解码。
 /// 整个 PCM 一次性读进内存(8kHz 单声道约 16KB/s,常规歌曲数 MB,可接受;GiB 级播客另议)。
 #[tauri::command]
-pub fn audio_waveform(path: String, buckets: Option<usize>) -> Result<Vec<[f32; 2]>, String> {
-    let buckets = buckets.unwrap_or(1000).clamp(64, 4096);
-    let output = Command::new(ffmpeg_path()?)
+pub fn audio_waveform(
+    app: tauri::AppHandle,
+    path: String,
+    buckets: Option<usize>,
+) -> Result<Vec<[f32; 2]>, String> {
+    use tauri::Manager;
+    let buckets = buckets.unwrap_or(1000).clamp(64, WAVE_BUCKETS);
+    let meta = std::fs::metadata(&path).map_err(|e| format!("无法读取文件: {e}"))?;
+    let key = cache_key(&path, meta.len(), mtime_of(&meta), 0);
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("thumbs");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let peaks = match read_wave_cache(&dir, key) {
+        Some(p) => p,
+        None => {
+            let p = compute_peaks(&path, WAVE_BUCKETS)?;
+            let _ = write_wave_cache(&dir, key, &p); // 缓存写失败不致命(下次再算)
+            p
+        }
+    };
+    Ok(rebucket(&peaks, buckets))
+}
+
+/// 解码并按固定桶数取峰(命令壳的内函数,便于无 AppHandle 的单测)。
+fn compute_peaks(path: &str, buckets: usize) -> Result<Vec<[f32; 2]>, String> {
+    let mut cmd = Command::new(ffmpeg_path()?);
+    no_window(&mut cmd);
+    let output = cmd
         .args([
             "-hide_banner",
             "-loglevel",
             "error",
             "-i",
-            &path,
-            "-vn", // 丢弃视频流
+            path,
+            "-vn", // 丢弃视频流(视频文件同样可抽音轨波形)
             "-ac",
             "1", // 单声道
             "-ar",
@@ -542,6 +596,62 @@ pub fn audio_waveform(path: String, buckets: Option<usize>) -> Result<Vec<[f32; 
         *peak = [mn as f32 / 32768.0, mx as f32 / 32768.0];
     }
     Ok(peaks)
+}
+
+/// 缓存桶 → 任意 n 桶:新桶 = 覆盖区间内 (min of mins, max of maxes)。
+fn rebucket(src: &[[f32; 2]], n: usize) -> Vec<[f32; 2]> {
+    if src.is_empty() || n == 0 {
+        return Vec::new();
+    }
+    if n == src.len() {
+        return src.to_vec();
+    }
+    let mut out = vec![[0f32, 0f32]; n];
+    for (i, o) in out.iter_mut().enumerate() {
+        let start = i * src.len() / n;
+        let end = (((i + 1) * src.len() / n).max(start + 1)).min(src.len());
+        let (mut mn, mut mx) = (f32::MAX, f32::MIN);
+        for p in &src[start..end] {
+            mn = mn.min(p[0]);
+            mx = mx.max(p[1]);
+        }
+        *o = [mn, mx];
+    }
+    out
+}
+
+/// 波形缓存二进制格式:b"OBWF" + u32 版本 + u32 桶数 + 桶数×2×f32 LE(4096 桶 ≈ 32KB)。
+fn wave_cache_path(dir: &Path, key: u64) -> PathBuf {
+    dir.join(format!("wave_{key:x}.bin"))
+}
+fn read_wave_cache(dir: &Path, key: u64) -> Option<Vec<[f32; 2]>> {
+    let data = std::fs::read(wave_cache_path(dir, key)).ok()?;
+    if data.len() < 12 || data[..4] != *b"OBWF" {
+        return None;
+    }
+    let ver = u32::from_le_bytes(data[4..8].try_into().ok()?);
+    let count = u32::from_le_bytes(data[8..12].try_into().ok()?) as usize;
+    if ver != 1 || count != WAVE_BUCKETS || data.len() != 12 + count * 8 {
+        return None;
+    }
+    let mut peaks = Vec::with_capacity(count);
+    for c in data[12..].chunks_exact(8) {
+        let mn = f32::from_le_bytes(c[0..4].try_into().ok()?);
+        let mx = f32::from_le_bytes(c[4..8].try_into().ok()?);
+        peaks.push([mn, mx]);
+    }
+    Some(peaks)
+}
+fn write_wave_cache(dir: &Path, key: u64, peaks: &[[f32; 2]]) -> Result<(), String> {
+    let mut buf = Vec::with_capacity(12 + peaks.len() * 8);
+    buf.extend_from_slice(b"OBWF");
+    buf.extend_from_slice(&1u32.to_le_bytes());
+    buf.extend_from_slice(&(peaks.len() as u32).to_le_bytes());
+    for [mn, mx] in peaks {
+        buf.extend_from_slice(&mn.to_le_bytes());
+        buf.extend_from_slice(&mx.to_le_bytes());
+    }
+    std::fs::write(wave_cache_path(dir, key), buf).map_err(|e| e.to_string())
 }
 
 // ---------- 测试(端到端冒烟:真起服务、真 remux、校验 fMP4 流) ----------
@@ -646,7 +756,9 @@ mod tests {
             .expect("spawn ffmpeg");
         assert!(status.success(), "生成测试 wav 失败");
 
-        let peaks = audio_waveform(wav.to_string_lossy().into_owned(), Some(500)).expect("waveform");
+        // 命令壳路径:固定 4096 桶解码 → 重分桶到请求值(等价 audio_waveform 的内部流程)
+        let full = compute_peaks(&wav.to_string_lossy(), WAVE_BUCKETS).expect("compute peaks");
+        let peaks = rebucket(&full, 500);
         assert_eq!(peaks.len(), 500, "应按 buckets 分桶");
         let max_peak = peaks.iter().map(|p| p[1]).fold(0f32, f32::max);
         let min_peak = peaks.iter().map(|p| p[0]).fold(0f32, f32::min);
@@ -662,6 +774,44 @@ mod tests {
             "峰值应归一化到 ±1"
         );
         std::fs::remove_file(&wav).ok();
+    }
+
+    /// 波形磁盘缓存:写 → 读 round-trip 逐值相等;坏魔数/坏长度判 None。
+    #[test]
+    fn wave_cache_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("observer_wavecache_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let peaks: Vec<[f32; 2]> = (0..WAVE_BUCKETS as i32)
+            .map(|i| [-i as f32 / WAVE_BUCKETS as f32, i as f32 / WAVE_BUCKETS as f32])
+            .collect();
+        write_wave_cache(&dir, 0xABCD, &peaks).expect("write cache");
+        let back = read_wave_cache(&dir, 0xABCD).expect("read cache");
+        assert_eq!(back.len(), peaks.len());
+        assert!(back.iter().zip(&peaks).all(|(a, b)| a == b), "round-trip 应逐值相等");
+        // 未写过的键 / 坏文件 → None
+        assert!(read_wave_cache(&dir, 0xDEAD).is_none());
+        let bad = wave_cache_path(&dir, 0xBEEF);
+        std::fs::write(&bad, b"junk").unwrap();
+        assert!(read_wave_cache(&dir, 0xBEEF).is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 重分桶:4096 → 500 长度正确,且包络保持(每新桶覆盖原桶区间的极值)。
+    #[test]
+    fn rebucket_preserves_envelope() {
+        let src: Vec<[f32; 2]> = (0..4096)
+            .map(|i| {
+                let v = (i % 100) as f32 / 100.0;
+                [-v, v]
+            })
+            .collect();
+        let out = rebucket(&src, 500);
+        assert_eq!(out.len(), 500);
+        // 源含 ±0.99 的极值,重分桶后至少存在桶达到接近的极值
+        let mx = out.iter().map(|p| p[1]).fold(f32::MIN, f32::max);
+        let mn = out.iter().map(|p| p[0]).fold(f32::MAX, f32::min);
+        assert!(mx > 0.9 && mn < -0.9, "极值应保留,mx {mx} mn {mn}");
+        assert!(rebucket(&src, 0).is_empty());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 /**
- * 文本字节解码 + 分隔文本解析(csv/tsv 用)。
- * 背景:后端 read_text_file 只 from_utf8_lossy,中文 Excel 导出的 GBK csv 会乱码。
- * 故 csv/tsv 走 asset:// 取字节(铁律 2),在前端按编码探测解码。
+ * 文本字节解码 + 分隔文本解析。
+ * 说明:常规文本(含 csv/tsv)已统一走后端 read_text_file(chardetng 编码探测,GBK
+ * 等不乱码);decodeTextBytes 仅剩 DXF(threeLoader 自取字节)在用。
  */
 
 /** 字节 → 文本:优先 UTF-8(严格),失败回退 GB18030(覆盖 GBK,中文 Windows 默认)。去 BOM。 */

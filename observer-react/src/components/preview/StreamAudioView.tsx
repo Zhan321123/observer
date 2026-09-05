@@ -6,8 +6,10 @@ import { clamp, formatTime } from "../../lib/format";
 import { useCellViewStore } from "../../stores/cellViewStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { registerControl } from "../../stores/cellControls";
-import { Waveform } from "./Waveform";
-import { SeekBar } from "./SeekBar";
+import { SpectrumBars } from "./SpectrumBars";
+import { ScrollWaveform } from "./ScrollWaveform";
+import { WaveformSeekBar } from "./WaveformSeekBar";
+import { useAudioAnalyser } from "../../hooks/useAudioAnalyser";
 import type { PreviewProps } from "../../formats/types";
 
 const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -35,6 +37,8 @@ export function StreamAudioView({ file, cellId, active }: PreviewProps) {
   const view = useCellViewStore((s) => s.views[cellId]);
   const setFullView = useCellViewStore((s) => s.setFullView);
   const setFullScreen = useCellViewStore((s) => s.setFullScreen);
+  // 实时分析(Web Audio):流服务已带 ACAO:*,配合 crossOrigin 可分析不静音
+  const analyser = useAudioAnalyser(mediaRef, true);
 
   const playing = view?.playing ?? false;
   const volume = view?.volume ?? 1;
@@ -206,6 +210,8 @@ export function StreamAudioView({ file, cellId, active }: PreviewProps) {
           const m = mediaRef.current;
           if (m) m.playbackRate = r;
         },
+        // 音频:宫格主体显示模式(频谱图/波形/无,§新增;功能条切换)
+        setAudioDisplay: (m) => setView(cellId, { audioDisplay: m }),
         enterFullView: () => setFullView(cellId),
         enterFullScreen: () => {
           setFullView(cellId);
@@ -224,18 +230,20 @@ export function StreamAudioView({ file, cellId, active }: PreviewProps) {
 
   return (
     <div ref={containerRef} className="flex h-full w-full flex-col bg-black/20">
-      {/* 波形可视区(§修改点2:纯展示;seek 由控制条 range 条负责) */}
+      {/* 可视区(§交互升级:频谱柱形图默认/滚动波形/无,功能条切换);seek 由控制条波形进度条负责 */}
       <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-3">
-        {src && <audio ref={mediaRef} src={src} />}
+        {src && <audio ref={mediaRef} src={src} crossOrigin="anonymous" />}
         <div className="max-w-full truncate text-xs text-text-dim">{file.name}</div>
-        <div className="w-full">
-          <Waveform
+        {(view?.audioDisplay ?? "bars") === "bars" ? (
+          <SpectrumBars analyser={analyser} />
+        ) : view?.audioDisplay === "wave" ? (
+          <ScrollWaveform
             path={file.path}
             duration={duration}
-            value={Math.min(currentTime, duration || currentTime)}
-            height={56}
+            value={currentTime}
+            onSeek={seekTo}
           />
-        </div>
+        ) : null}
       </div>
 
       {/* 格内控制条 */}
@@ -250,13 +258,13 @@ export function StreamAudioView({ file, cellId, active }: PreviewProps) {
         <span className="shrink-0 text-[11px] tabular-nums text-text-dim">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
-        {/* 普通 range 进度条(§修改点2):流式 seek = 改 startOffset 重启流,故松手才跳(live=false) */}
-        <SeekBar
+        {/* 波形进度条(§新增):流式 seek = 改 startOffset 重启流,故松手才跳(live=false) */}
+        <WaveformSeekBar
+          path={file.path}
           duration={duration}
           value={currentTime}
           live={false}
           onSeek={seekTo}
-          className="h-1 min-w-0 flex-1 accent-brand-bright"
         />
         <button
           className="text-text hover:text-brand-bright"

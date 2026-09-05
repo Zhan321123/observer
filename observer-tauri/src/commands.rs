@@ -94,15 +94,45 @@ pub fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
 // 后端只防一次读入撑爆 WebView。超过此值仍拒绝。
 const MAX_TEXT_BYTES: u64 = 1024 * 1024 * 1024;
 
-/// 读文本文件(UTF-8,有损容错)。仅元数据级文本,媒体字节绝不走这里(铁律 2)。
+/// read_text_file 的返回:解码后的文本 + 检测出的编码名(供文件信息框显示)。
+#[derive(Serialize)]
+pub struct TextContent {
+    pub text: String,
+    /// encoding_rs 编码名,如 "UTF-8" / "GBK" / "UTF-16LE"(有 BOM 时是 BOM 对应编码)
+    pub encoding: String,
+}
+
+/// 字节 → 文本(编码探测):chardetng 探测(Firefox 同款)→ encoding_rs 解码(自带 BOM 识别与去除)。
+/// 解码出替换符(猜错)→ GB18030 兜底(覆盖 GBK/GB2312,中文 Windows 默认);再失败回退 UTF-8 有损。
+fn decode_text_bytes(bytes: &[u8]) -> TextContent {
+    let mut det = chardetng::EncodingDetector::new();
+    let sniff = bytes.len().min(64 * 1024); // 前 64KB 足够判定,大文件不整块喂
+    det.feed(&bytes[..sniff], sniff == bytes.len());
+    let guess = det.guess(None, true);
+    let (cow, used, had_errors) = guess.decode(bytes);
+    if !had_errors {
+        return TextContent { text: cow.into_owned(), encoding: used.name().to_string() };
+    }
+    let (g, g_enc, g_err) = encoding_rs::GB18030.decode(bytes);
+    if !g_err {
+        return TextContent { text: g.into_owned(), encoding: g_enc.name().to_string() };
+    }
+    TextContent {
+        text: String::from_utf8_lossy(bytes).into_owned(),
+        encoding: "UTF-8 (lossy)".to_string(),
+    }
+}
+
+/// 读文本文件(编码探测解码:GBK/Big5/Shift-JIS/UTF-16 等 .txt 不再乱码)。
+/// 仅元数据级文本,媒体字节绝不走这里(铁律 2)。
 #[tauri::command]
-pub fn read_text_file(path: String) -> Result<String, String> {
+pub fn read_text_file(path: String) -> Result<TextContent, String> {
     let meta = fs::metadata(&path).map_err(|e| format!("无法读取文件信息: {e}"))?;
     if meta.len() > MAX_TEXT_BYTES {
         return Err(format!("文件过大(>{} MiB),暂不按文本预览", MAX_TEXT_BYTES / 1024 / 1024));
     }
     let bytes = fs::read(&path).map_err(|e| format!("无法读取文件: {e}"))?;
-    Ok(String::from_utf8_lossy(&bytes).to_string())
+    Ok(decode_text_bytes(&bytes))
 }
 
 /// 解析 Markdown 链接为本地文件绝对路径(供"本地链接→新宫格打开")。
@@ -247,6 +277,39 @@ pub fn allow_asset_path(app: tauri::AppHandle, path: String) -> Result<(), Strin
 mod tests {
     use super::*;
     use std::process::Command;
+
+    /// 编码探测:GBK / UTF-8+BOM / UTF-16LE+BOM / 纯 ASCII 均正确解码并上报编码名;BOM 被去除。
+    #[test]
+    fn read_text_file_detects_encoding() {
+        let dir = std::env::temp_dir();
+        let check = |name: &str, raw: &[u8]| -> TextContent {
+            let p = dir.join(format!("observer_enc_{name}_{}.txt", std::process::id()));
+            fs::write(&p, raw).unwrap();
+            let r = read_text_file(p.to_string_lossy().to_string()).expect("read");
+            std::fs::remove_file(&p).ok();
+            r
+        };
+
+        // GBK「你好世界 hello observer」
+        let r = check("gbk", b"\xc4\xe3\xba\xc3\xca\xc0\xbd\xe7 hello observer");
+        assert_eq!(r.text, "你好世界 hello observer", "GBK 应正确解码");
+        assert!(r.encoding.contains("GB"), "应探测出 GB 系编码,实际 {}", r.encoding);
+
+        // UTF-8 + BOM(BOM 应被去除)
+        let r = check("utf8bom", b"\xEF\xBB\xBFhello observer");
+        assert_eq!(r.text, "hello observer");
+        assert!(!r.text.starts_with('\u{feff}'), "BOM 应去除");
+        assert_eq!(r.encoding, "UTF-8");
+
+        // UTF-16LE + BOM「你好」
+        let r = check("utf16", b"\xFF\xFE\x60\x4F\x7D\x59");
+        assert_eq!(r.text, "你好");
+        assert_eq!(r.encoding, "UTF-16LE");
+
+        // 纯 ASCII:文本正确即可(探测可能报 UTF-8)
+        let r = check("ascii", b"plain ascii text");
+        assert_eq!(r.text, "plain ascii text");
+    }
 
     fn gen(args: &[&str], out: &std::path::Path) {
         let status = Command::new(crate::ffmpeg::ffmpeg_path().expect("ffmpeg"))

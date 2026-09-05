@@ -41,6 +41,10 @@ zip = { version = "8", default-features = false, features = ["aes-crypto"] }
 unrar = "0.5"
 # task2 7z 列目录:纯 Rust;aes256 是打开加密 7z(含 -mhe=on)头所必需(引入 aes/cbc/rand)。
 sevenz-rust = { version = "0.6", features = ["aes256"] }
+# 文本编码探测(commands.rs read_text_file):chardetng(Firefox 同款统计探测)
+# + encoding_rs 解码(自带 BOM 识别;GB18030 兜底覆盖 GBK/GB2312)。GBK .txt 不再乱码。
+chardetng = "0.1"
+encoding_rs = "0.8"
 
 [profile.release]
 panic = "abort"

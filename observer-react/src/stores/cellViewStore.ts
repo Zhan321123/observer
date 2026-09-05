@@ -28,6 +28,8 @@ export interface CellView {
   lineNumbers?: boolean;
   /** 文本:自动换行开关(默认关) */
   wordWrap?: boolean;
+  /** 文本:检测出的编码名(read_text_file 返回,如 "UTF-8"/"GBK",供文件信息框) */
+  textEncoding?: string;
   /** 宫格刷新信号:自增触发预览组件重挂载(重读/重建) */
   reloadKey?: number;
   /** 预览失败原因(有值则该格显示错误占位) */
@@ -35,6 +37,8 @@ export interface CellView {
 
   /** Lottie:动画/文本模式(默认 animation) */
   lottieMode?: "animation" | "text";
+  /** Lottie:兼容模式(表达式渲染失败 → 自动剥表达式重载成功后为 true,功能条显示徽标) */
+  lottieCompat?: boolean;
   /** Markdown:预览/文本模式(默认 preview) */
   mdMode?: "preview" | "text";
   /** GIF:是否播放中 / 当前帧 / 总帧数(供功能条帧控件) */
@@ -66,6 +70,9 @@ export interface CellView {
 
   /** CSV/TSV:表格/文本模式(默认 table) */
   csvMode?: "table" | "text";
+  /** 音频:宫格主体显示模式(实时频谱柱形图 bars / 滚动波形 wave / 无 none;默认 bars,
+   *  纯内存态,循 csvMode 先例由预览组件兜底默认值) */
+  audioDisplay?: "bars" | "wave" | "none";
   /** SVG:预览/文本源码模式(默认 preview) */
   svgMode?: "preview" | "text";
   /** PDF:当前页(0 基)/ 总页数 / 缩放倍率(供功能条翻页与缩放) */

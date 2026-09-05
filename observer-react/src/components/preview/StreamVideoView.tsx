@@ -287,11 +287,14 @@ export function StreamVideoView({ file, cellId, active }: PreviewProps) {
         <span className="shrink-0 text-[11px] tabular-nums text-text-dim">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
+        {/* 波形进度条 + 悬停预览:流式 seek = 重启 ffmpeg,松手才跳(live=false,
+            修复拖动逐像素重启进程 → 打包版闪黑框) */}
         <VideoSeekBar
           path={file.path}
           duration={duration}
           value={Math.min(currentTime, duration || currentTime)}
           onSeek={seekTo}
+          live={false}
         />
         <button
           className="text-text hover:text-brand-bright"

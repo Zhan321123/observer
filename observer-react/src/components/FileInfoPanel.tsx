@@ -106,6 +106,10 @@ export function FileInfoPanel() {
       </Row>
       <Row label="大小">{stat ? formatBytes(stat.size) : "-"}</Row>
       <Row label="修改时间">{stat ? formatDateTime(stat.mtime) : "-"}</Row>
+      {/* 文本编码(read_text_file 探测,由 TextView 载入后写入视图态) */}
+      {(file.kind === "text" || file.kind === "markdown") && view?.textEncoding && (
+        <Row label="编码">{view.textEncoding}</Row>
+      )}
       <Row label="路径">
         <span className="break-all text-text-dim">{file.path}</span>
       </Row>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { assetUrl, allowAssetPath } from "../../lib/tauri";
 import { useCellViewStore } from "../../stores/cellViewStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { registerControl } from "../../stores/cellControls";
 import type { PreviewProps } from "../../formats/types";
 
@@ -70,6 +71,7 @@ export function IcoView({ file, cellId }: PreviewProps) {
   const setView = useCellViewStore((s) => s.setView);
   const transparencyGrid = useCellViewStore((s) => s.views[cellId]?.transparencyGrid) ?? false;
   const icoIndex = useCellViewStore((s) => s.views[cellId]?.icoIndex) ?? 0;
+  const imageScaleMode = useSettingsStore((s) => s.imageScaleMode);
   const setFullView = useCellViewStore((s) => s.setFullView);
   const setFullScreen = useCellViewStore((s) => s.setFullScreen);
 
@@ -135,7 +137,11 @@ export function IcoView({ file, cellId }: PreviewProps) {
             alt={file.name}
             draggable={false}
             className="max-h-full max-w-full object-contain"
-            style={{ imageRendering: cur.size < 64 ? "pixelated" : "auto" }}
+            // 设置项缩放算法;auto 档保留原启发式(小尺寸像素图默认锐利)
+            style={{
+              imageRendering:
+                imageScaleMode === "auto" ? (cur.size < 64 ? "pixelated" : "auto") : imageScaleMode,
+            }}
           />
           <div className="text-[11px] text-text-dim">{cur.label}</div>
         </>

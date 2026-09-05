@@ -57,6 +57,8 @@ export interface CellControl {
   toggleTransparencyGrid?(): void;
   /** CSV/TSV:表格/文本模式切换 */
   toggleCsvMode?(): void;
+  /** 音频:宫格主体显示模式切换(实时频谱柱形图/滚动波形/无) */
+  setAudioDisplay?(m: "bars" | "wave" | "none"): void;
   /** SVG:预览/文本源码模式切换 */
   toggleSvgMode?(): void;
   /** PDF:翻页 */

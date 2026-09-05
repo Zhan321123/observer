@@ -33,6 +33,7 @@ export function GifView({ file, cellId, active }: PreviewProps) {
   const fitMode = useCellViewStore((s) => s.views[cellId]?.fitMode) as FitMode | undefined;
   const transparencyGrid = useCellViewStore((s) => s.views[cellId]?.transparencyGrid) ?? false;
   const defaultFit = useSettingsStore((s) => s.imageDefaultFit);
+  const imageScaleMode = useSettingsStore((s) => s.imageScaleMode);
   const setFullView = useCellViewStore((s) => s.setFullView);
   const setFullScreen = useCellViewStore((s) => s.setFullScreen);
 
@@ -344,6 +345,8 @@ export function GifView({ file, cellId, active }: PreviewProps) {
             style={{
               transform: `translate(${tf.x}px, ${tf.y}px) scale(${tf.s})`,
               transformOrigin: "0 0",
+              // CSS 缩放算法同样作用于 canvas 元素(设置项 image-rendering)
+              imageRendering: imageScaleMode,
             }}
           />
           {/* 边界描边(§交互修正-图片边界):随 transform 走的 1px 双色环,屏幕恒定 1px */}

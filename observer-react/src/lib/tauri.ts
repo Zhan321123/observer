@@ -10,7 +10,13 @@ import type { DirEntry, FileStat, DetectResult, VideoMeta } from "../types/file"
 export const assetUrl = (p: string) => convertFileSrc(p);
 
 export const listDir = (path: string) => invoke<DirEntry[]>("list_dir", { path });
-export const readTextFile = (path: string) => invoke<string>("read_text_file", { path });
+
+/** read_text_file 的返回:解码文本 + 检测出的编码名(如 "UTF-8"/"GBK"/"UTF-16LE",供信息框) */
+export interface TextContent {
+  text: string;
+  encoding: string;
+}
+export const readTextFile = (path: string) => invoke<TextContent>("read_text_file", { path });
 export const fileStat = (path: string) => invoke<FileStat>("file_stat", { path });
 export const detectFormat = (path: string) => invoke<DetectResult>("detect_format", { path });
 export const revealInExplorer = (path: string) => invoke<void>("reveal_in_explorer", { path });
@@ -36,7 +42,8 @@ export const streamUrl = (base: string, path: string, t: number) =>
   `${base}/stream?path=${encodeURIComponent(path)}&t=${t.toFixed(3)}`;
 
 // ---- M3 音频进阶 ----
-/** 波形峰值:FFmpeg 解码 → 单声道 8k s16 → 每桶 [min,max] 归一化到 ±1(buckets 默认 1000) */
+/** 波形峰值:FFmpeg 解码 → 单声道 8k s16 → 每桶 [min,max] 归一化到 ±1(buckets 默认 1000;
+ *  后端固定按 4096 桶磁盘缓存,任意 buckets 由内存重分桶满足) */
 export const audioWaveform = (path: string, buckets?: number) =>
   invoke<Array<[number, number]>>("audio_waveform", { path, buckets });
 /** MIDI:rustysynth SoundFont 合成 → WAV 磁盘缓存,返回路径(前端经 asset:// 原生播放) */
