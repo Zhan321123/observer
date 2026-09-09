@@ -1,10 +1,6 @@
 # Observer
 
-<img src="https://img.shields.io/badge/Pnpm-9.15.9-yellow?logo=pnpm">
-<img src="https://img.shields.io/badge/React-18.3.1-blue?logo=react">
-<img src="https://img.shields.io/badge/Cargo-1.97.0-red?logo=rust">
-<img src="https://img.shields.io/badge/Tauri-2.6.3-purple?logo=tauri">
-<img src="https://img.shields.io/badge/Three-0.185.1-green?logo=three.js">
+<img src="https://img.shields.io/badge/Pnpm-9.15.9-yellow?logo=pnpm"><img src="https://img.shields.io/badge/React-18.3.1-blue?logo=react"><img src="https://img.shields.io/badge/Cargo-1.97.0-red?logo=rust"><img src="https://img.shields.io/badge/Tauri-2.6.3-purple?logo=tauri"><img src="https://img.shields.io/badge/Three-0.185.1-green?logo=three.js">
 
 <img src="./assets/image.png">
 
