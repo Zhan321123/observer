@@ -7,7 +7,7 @@ export function ConvertPanel() {
       <ArrowLeftRight size={26} className="text-text-dim/60" />
       <div className="text-sm text-text-dim">暂不可用</div>
       <div className="max-w-xs text-[11px] leading-relaxed text-text-dim/60">
-        格式转换将在后续版本提供 —— 与预览共用同一 Job 引擎(design.md §10,里程碑 M5)。
+        格式转换将在后续版本提供
       </div>
     </div>
   );

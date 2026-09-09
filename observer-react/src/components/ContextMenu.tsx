@@ -37,6 +37,14 @@ export function ContextMenu() {
   const closeMenu = useContextMenuStore((s) => s.closeMenu);
   const ref = useRef<HTMLDivElement>(null);
 
+  // 全局屏蔽 WebView 自带的浏览器右键菜单:本应用右键均为自绘菜单,
+  // 文本/图片/空白等未挂自绘菜单的区域右键不再弹出浏览器默认项(Ctrl+C 等快捷键不受影响)。
+  useEffect(() => {
+    const off = (e: MouseEvent) => e.preventDefault();
+    document.addEventListener("contextmenu", off);
+    return () => document.removeEventListener("contextmenu", off);
+  }, []);
+
   useEffect(() => {
     if (!pos) return;
     const onDown = (e: MouseEvent) => {
