@@ -25,10 +25,10 @@
 
 ## M5 — 格式转换
 
-当前转换 frame 为"暂不可用"占位(架构已按 design.md §4 预留)。
+3D 类别已上线(单任务、按钮级 busy,无队列/进度);其余类别仍占位(架构已按 design.md §4 预留)。
 
 - [ ] Job 引擎加 Convert 出口(与预览共用同一管道)
 - [ ] FFmpeg 命令模板库(视频/音频转换)
 - [ ] 图片编解码(解码 → image crate 编码 png/jpg/webp/tiff;AVIF 用 ravif)
-- [ ] 3D 导出(three.js exporter GLB/STL/OBJ/PLY)
-- [ ] 转换 frame UI:目标格式/参数选择、任务提交、进度显示
+- [x] 3D 导出(three.js exporter GLB/GLTF/STL/OBJ/PLY;贴图内嵌 GLB/GLTF,STL/OBJ/PLY 仅几何——源有贴图时弹提醒,有动画时文案含动画;输出重名自动 " (n)" 绝不覆盖;无 Mesh 源[点云/线段/骨骼]仅 GLB/GLTF;Draco/KTX2 源仍无法加载,见上方补强项)
+- [ ] 转换 frame UI:3D 类别已上线(目标格式下拉 + 输出目录[默认同目录] + 提醒框 + 结果反馈);参数选择、任务提交队列、进度显示及图片/音视频类别待接

@@ -67,6 +67,8 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
   const gridRef = useRef<THREE.GridHelper | null>(null);
   const lightsRef = useRef<THREE.Group | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  // 原始动画片段(mixer 只存动作;格式转换 GLTFExporter options.animations 需要原始 clips)
+  const clipsRef = useRef<THREE.AnimationClip[]>([]);
   const targetRef = useRef(new THREE.Vector3());
   const homeRef = useRef<{ p: THREE.Vector3; t: THREE.Vector3 } | null>(null);
   // ---- 每激活期对象(GPU) ----
@@ -250,6 +252,7 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
         acquiredRef.current = owned ? "owned" : "cache";
         const { object, animations, info } = model;
         modelRef.current = object;
+        clipsRef.current = animations;
         scene.add(object);
 
         // 平面网格:按模型包围盒铺在模型底部(默认显示,§功能条"平面网格"开关)
@@ -325,6 +328,7 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
         releaseThreeModel(file.path);
       }
       mixerRef.current = null;
+      clipsRef.current = [];
       modelRef.current = null;
       gridRef.current = null;
       sceneRef.current = null;
@@ -498,6 +502,12 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
           setView(cellId, { threedLight: (cur + 1) % LIGHT_PRESETS.length });
           schedulePersist();
         },
+        // 格式转换(M5):取当前已加载模型——只给 modelRef(绝不给 scene,含网格辅助线/灯光);
+        // readyRef 守卫盖住 reloadKey 重挂载窗口期(旧 threedInfo 残留而新模型未就绪)
+        threedExportModel: () =>
+          readyRef.current && modelRef.current
+            ? { object: modelRef.current, animations: clipsRef.current }
+            : null,
         enterFullView: () => setFullView(cellId),
         enterFullScreen: () => {
           setFullView(cellId);

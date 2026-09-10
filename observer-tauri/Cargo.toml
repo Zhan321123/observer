@@ -45,6 +45,9 @@ sevenz-rust = { version = "0.6", features = ["aes256"] }
 # + encoding_rs 解码(自带 BOM 识别;GB18030 兜底覆盖 GBK/GB2312)。GBK .txt 不再乱码。
 chardetng = "0.1"
 encoding_rs = "0.8"
+# M5 格式转换(3D 导出):产物字节 base64 解码后落盘
+# (铁律 2 输出侧唯一例外,经 JSON 单命令,见 convert.rs)。
+base64 = "0.22"
 
 [profile.release]
 panic = "abort"

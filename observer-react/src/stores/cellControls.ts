@@ -1,3 +1,4 @@
+import type * as THREE from "three";
 import type { FileKind } from "../types/file";
 
 /**
@@ -73,6 +74,9 @@ export interface CellControl {
   toggleThreedGrid?(): void;
   /** 3D:光照环境切换(循环预设) */
   cycleThreedLight?(): void;
+  /** 3D:取当前已加载模型供格式转换(未就绪/卸载中 → null;
+   *  object 为模型本身,不含网格辅助线/灯光) */
+  threedExportModel?(): { object: THREE.Object3D; animations: THREE.AnimationClip[] } | null;
   enterFullView?(): void;
   enterFullScreen?(): void;
 }

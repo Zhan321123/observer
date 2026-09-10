@@ -1,5 +1,5 @@
 // 所有 invoke IPC 的唯一出口。铁律 2:媒体字节走 asset://(convertFileSrc),不走这里。
-// 这里只传元数据 / JSON / 文本。
+// 这里只传元数据 / JSON / 文本。唯一例外:convertWrite 的转换产物(输出方向,见 M5 节)。
 
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -113,3 +113,19 @@ export type SqliteErr =
 export const sqliteTables = (path: string) => invoke<SqliteTable[]>("sqlite_tables", { path });
 export const sqlitePage = (path: string, table: string, offset: number, limit?: number) =>
   invoke<SqlitePage>("sqlite_page", { path, table, offset, limit: limit ?? null });
+
+// ---- M5 格式转换(3D 导出) ----
+/** Uint8Array → base64。分块(0x8000)拼接:String.fromCharCode.apply 有参数栈上限,
+ *  整段 spread 大数组会 RangeError。 */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(bin);
+}
+/** convert_write:转换产物写入 dir/filename(重名自动 " (n)",绝不覆盖),返回最终写入路径。
+ *  铁律 2(媒体字节不走 IPC)的首个输出侧例外:产物由前端(three.js exporter)生成,
+ *  asset:// 输入管道不适用;v1 以 base64 走 JSON 单命令(单任务、MB 级,~1.33x 膨胀可接受)。 */
+export const convertWrite = (dir: string, filename: string, dataB64: string) =>
+  invoke<string>("convert_write", { dir, filename, dataB64 });

@@ -1,6 +1,7 @@
 mod archive;
 mod audiox;
 mod commands;
+mod convert;
 mod db;
 mod ffmpeg;
 mod formats;
@@ -42,6 +43,7 @@ pub fn run() {
             commands::detect_format,
             commands::allow_asset_path,
             commands::resolve_link,
+            convert::convert_write,
             db::app_state_get,
             db::app_state_set,
             db::history_open,

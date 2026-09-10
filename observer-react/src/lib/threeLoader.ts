@@ -31,6 +31,10 @@ export interface ThreeModelInfo {
   animations: number;
   /** 包围盒尺寸(世界单位) */
   bbox: [number, number, number];
+  /** 场景是否含 Mesh(无则 stl/obj/ply 不可选:PCD 点云/DXF 线段/BVH 骨骼) */
+  hasMesh: boolean;
+  /** 材质是否带贴图(转 stl/obj/ply 会丢 → 转换前提醒) */
+  hasTextures: boolean;
 }
 
 export interface LoadedModel {
@@ -88,13 +92,31 @@ function geometryToMesh(geo: THREE.BufferGeometry): THREE.Mesh {
   return new THREE.Mesh(geo, mat);
 }
 
+/** 材质贴图槽位(任一非空即视为带贴图;转 STL/OBJ/PLY 会丢) */
+const TEX_SLOTS = [
+  "map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap",
+  "aoMap", "alphaMap", "bumpMap", "displacementMap", "specularMap", "lightMap", "envMap",
+] as const;
+
+/** 材质是否带任一贴图(槽位持有 Texture 即真) */
+function hasAnyTexture(mat: THREE.Material): boolean {
+  const m = mat as unknown as Record<string, unknown>;
+  return TEX_SLOTS.some((slot) => {
+    const v = m[slot];
+    return !!v && typeof v === "object" && (v as THREE.Texture).isTexture === true;
+  });
+}
+
 /** 统计顶点/面数/材质数/包围盒(动画数在外层补) */
 function computeInfo(object: THREE.Object3D, animations: number): ThreeModelInfo {
   let vertices = 0;
   let triangles = 0;
+  let hasMesh = false;
+  let hasTextures = false;
   const mats = new Set<THREE.Material>();
   object.traverse((o) => {
     const mesh = o as THREE.Mesh;
+    if (mesh.isMesh) hasMesh = true;
     const geo = mesh.geometry as THREE.BufferGeometry | undefined;
     if (geo?.getAttribute) {
       const pos = geo.getAttribute("position");
@@ -106,8 +128,16 @@ function computeInfo(object: THREE.Object3D, animations: number): ThreeModelInfo
       }
     }
     const m = mesh.material as THREE.Material | THREE.Material[] | undefined;
-    if (Array.isArray(m)) m.forEach((x) => x && mats.add(x));
-    else if (m) mats.add(m);
+    if (Array.isArray(m)) {
+      m.forEach((x) => {
+        if (!x) return;
+        mats.add(x);
+        if (hasAnyTexture(x)) hasTextures = true;
+      });
+    } else if (m) {
+      mats.add(m);
+      if (hasAnyTexture(m)) hasTextures = true;
+    }
   });
   const box = new THREE.Box3().setFromObject(object);
   const size = new THREE.Vector3();
@@ -118,6 +148,8 @@ function computeInfo(object: THREE.Object3D, animations: number): ThreeModelInfo
     materials: mats.size,
     animations,
     bbox: [size.x, size.y, size.z],
+    hasMesh,
+    hasTextures,
   };
 }
 

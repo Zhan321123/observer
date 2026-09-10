@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ThreeModelInfo } from "../lib/threeLoader";
 
 /**
  * 每个宫格的"响应式视图态"(供功能条 / 文件信息框渲染),
@@ -94,14 +95,8 @@ export interface CellView {
   threedAutoRotate?: boolean;
   /** 3D:光照环境预设下标(默认 0) */
   threedLight?: number;
-  /** 3D:模型统计(顶点/面/材质/动画/包围盒,供文件信息框) */
-  threedInfo?: {
-    vertices: number;
-    triangles: number;
-    materials: number;
-    animations: number;
-    bbox: [number, number, number];
-  };
+  /** 3D:模型统计(顶点/面/材质/动画/包围盒/是否含 Mesh/是否带贴图,供文件信息框与格式转换) */
+  threedInfo?: ThreeModelInfo;
 }
 
 interface CellViewState {
