@@ -93,6 +93,8 @@ export interface CellView {
   threedWireframe?: boolean;
   /** 3D:自动旋转开关(默认 false) */
   threedAutoRotate?: boolean;
+  /** 3D:爆炸系数(0=装配态,1=完全爆炸;默认 0。存目标值,渐变动画瞬态在 ThreeView ref) */
+  threedExplode?: number;
   /** 3D:光照环境预设下标(默认 0) */
   threedLight?: number;
   /** 3D:模型统计(顶点/面/材质/动画/包围盒/是否含 Mesh/是否带贴图,供文件信息框与格式转换) */

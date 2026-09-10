@@ -35,12 +35,27 @@ export interface ThreeModelInfo {
   hasMesh: boolean;
   /** 材质是否带贴图(转 stl/obj/ply 会丢 → 转换前提醒) */
   hasTextures: boolean;
+  /** 可爆炸零件数(分叉层含 Mesh 子树数;<2 不可用:单 mesh 的 stl/ply、点云/图纸/骨骼 → 功能条隐藏爆炸按钮) */
+  parts: number;
 }
 
 export interface LoadedModel {
   object: THREE.Object3D;
   animations: THREE.AnimationClip[];
   info: ThreeModelInfo;
+  /** 爆炸图零件(可爆零件 <2 时为空数组,与 info.parts 门控一致) */
+  parts: ExplodePart[];
+}
+
+/** 爆炸图零件:applyExplode 做 node.position = home + offset·k(k∈[0,1])。
+ *  数据在解析期采集(位置未被任何爆炸位移污染)且为绝对赋值 → 幂等,
+ *  模型缓存复用 / reloadKey 重挂载时免疫上次残留,不漂移。 */
+export interface ExplodePart {
+  node: THREE.Object3D;
+  /** 解析时的原始局部 position(clone 快照) */
+  home: THREE.Vector3;
+  /** k=1 的位移向量(父局部系,含尺度) */
+  offset: THREE.Vector3;
 }
 
 /** 本 handler 认识的 3D 扩展名(与 formats.rs kind_for_ext、registry 对齐) */
@@ -107,8 +122,53 @@ function hasAnyTexture(mat: THREE.Material): boolean {
   });
 }
 
+/** 子树是否含 Mesh(排除灯光/相机/线段/点云/BVH 骨骼等非 Mesh 对象) */
+function subtreeHasMesh(node: THREE.Object3D): boolean {
+  let has = false;
+  node.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) has = true;
+  });
+  return has;
+}
+
+/**
+ * 收集爆炸图零件(子树粒度,保持子装配整体性):从模型根下钻,统计 children 中
+ * "子树含 Mesh"的孩子数——0=无零件;1=单链继续下钻(找到真正的分叉层);≥2=这些孩子即零件。
+ * 方向=零件包围盒中心−装配中心(世界系径向,同心件跳过),尺度=装配最大边长×0.55;
+ * 世界位移经父矩阵逆的线性部分(Matrix3,仿射精确)转局部系——不能用 transformDirection
+ * (会归一化丢父链缩放:FBX 常带 cm 单位根 scale=0.01,位移将缩小 100 倍)。
+ * 可用零件 <2 时返回 [](单件散开=整体平移,无意义;info.parts=0)。
+ */
+function collectExplodeParts(object: THREE.Object3D): ExplodePart[] {
+  object.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object);
+  if (box.isEmpty()) return [];
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+
+  let level: THREE.Object3D = object;
+  let meshKids: THREE.Object3D[] = [];
+  for (;;) {
+    meshKids = level.children.filter(subtreeHasMesh);
+    if (meshKids.length !== 1) break;
+    level = meshKids[0]; // 单链下钻:唯一含 Mesh 的孩子才是潜在的零件层
+  }
+  if (meshKids.length < 2) return [];
+
+  const parts: ExplodePart[] = [];
+  for (const node of meshKids) {
+    const dir = new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3()).sub(center);
+    if (dir.lengthSq() < 1e-12) continue; // 同心零件:方向不稳定,原地不动
+    dir.normalize().multiplyScalar(maxDim * 0.55);
+    const m3 = new THREE.Matrix3().setFromMatrix4(node.parent!.matrixWorld.clone().invert());
+    parts.push({ node, home: node.position.clone(), offset: dir.applyMatrix3(m3) });
+  }
+  return parts.length >= 2 ? parts : [];
+}
+
 /** 统计顶点/面数/材质数/包围盒(动画数在外层补) */
-function computeInfo(object: THREE.Object3D, animations: number): ThreeModelInfo {
+function computeInfo(object: THREE.Object3D, animations: number, parts: number): ThreeModelInfo {
   let vertices = 0;
   let triangles = 0;
   let hasMesh = false;
@@ -150,6 +210,7 @@ function computeInfo(object: THREE.Object3D, animations: number): ThreeModelInfo
     bbox: [size.x, size.y, size.z],
     hasMesh,
     hasTextures,
+    parts,
   };
 }
 
@@ -254,6 +315,7 @@ export async function loadThreeModel(file: FileRef): Promise<LoadedModel> {
   }
 
   if (!object) throw new Error("模型解析为空");
-  const info = computeInfo(object, animations.length);
-  return { object, animations, info };
+  const parts = collectExplodeParts(object);
+  const info = computeInfo(object, animations.length, parts.length);
+  return { object, animations, info, parts };
 }

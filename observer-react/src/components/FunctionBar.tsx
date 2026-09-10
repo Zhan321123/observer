@@ -2,7 +2,7 @@ import {
   Play, Pause, Volume2, VolumeX, SkipBack, SkipForward, ChevronLeft, ChevronRight,
   Maximize, Expand, Minimize2, ZoomIn, ZoomOut, FolderOpen, Copy, Ratio, Scan,
   ListOrdered, WrapText, ClipboardCopy, Eye, FileCode, Film, LayoutGrid, Table,
-  RotateCcw, Orbit, Box, Grid3x3, Lightbulb, FolderArchive, ChevronsUpDown, ChevronsDownUp,
+  RotateCcw, Orbit, Box, Boxes, Grid3x3, Lightbulb, FolderArchive, ChevronsUpDown, ChevronsDownUp,
   Type, FileText, FileTerminal,
 } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
@@ -509,6 +509,16 @@ export function FunctionBar({
               >
                 <Box size={16} />
               </BarButton>
+              {/* 爆炸图:多零件模型才有(单 mesh/点云/图纸 parts<2 隐藏;解析中 threedInfo 未上报亦隐藏) */}
+              {(view?.threedInfo?.parts ?? 0) >= 2 && (
+                <BarButton
+                  title="爆炸图"
+                  active={(view?.threedExplode ?? 0) > 0}
+                  onClick={() => ctl()?.toggleThreedExplode?.()}
+                >
+                  <Boxes size={16} />
+                </BarButton>
+              )}
               <BarButton
                 title="平面网格"
                 active={view?.threedGrid ?? true}

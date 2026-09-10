@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { acquireThreeModel, releaseThreeModel, disposeThreeObject } from "../../lib/threeModelCache";
+import type { ExplodePart } from "../../lib/threeLoader";
 import { threedGet, threedSet } from "../../lib/persist";
 import { useCellViewStore } from "../../stores/cellViewStore";
 import { useThreeDStore, registerThreeEngine } from "../../stores/threeDStore";
@@ -17,6 +18,7 @@ interface PersistedView {
   wire?: boolean;
   spin?: boolean;
   light?: number;
+  explode?: number;
 }
 
 /** 光照环境预设(cycleThreedLight 循环;无阴影保性能) */
@@ -69,6 +71,9 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   // 原始动画片段(mixer 只存动作;格式转换 GLTFExporter options.animations 需要原始 clips)
   const clipsRef = useRef<THREE.AnimationClip[]>([]);
+  // 爆炸图:零件数据(解析期采集,随模型缓存走)与当前动画值(CPU 侧常驻,跨 freeze 存活)
+  const partsRef = useRef<ExplodePart[]>([]);
+  const explodeCurRef = useRef(0);
   const targetRef = useRef(new THREE.Vector3());
   const homeRef = useRef<{ p: THREE.Vector3; t: THREE.Vector3 } | null>(null);
   // ---- 每激活期对象(GPU) ----
@@ -100,6 +105,7 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
       wire: v?.threedWireframe ?? false,
       spin: v?.threedAutoRotate ?? false,
       light: v?.threedLight ?? 0,
+      explode: v?.threedExplode ?? 0,
     };
     void threedSet(file.path, JSON.stringify(payload)).catch(() => {});
   }, [cellId, file.path]);
@@ -206,6 +212,11 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
     });
   }, []);
 
+  /** 爆炸图:零件 position = home + offset·k(绝对赋值幂等,k=0 即装配态;方向/尺度解析期已算好) */
+  const applyExplode = useCallback((k: number) => {
+    for (const p of partsRef.current) p.node.position.copy(p.home).addScaledVector(p.offset, k);
+  }, []);
+
   // ---- 卸载工具:释放 GPU 资源 ----
   const disposeRenderer = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -253,6 +264,7 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
         const { object, animations, info } = model;
         modelRef.current = object;
         clipsRef.current = animations;
+        partsRef.current = model.parts;
         scene.add(object);
 
         // 平面网格:按模型包围盒铺在模型底部(默认显示,§功能条"平面网格"开关)
@@ -292,6 +304,7 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
                 threedWireframe: j.wire ?? false,
                 threedAutoRotate: j.spin ?? false,
                 threedLight: j.light ?? 0,
+                threedExplode: j.explode ?? 0,
               });
             } catch {
               // 视角 JSON 损坏 → 用默认
@@ -304,6 +317,11 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
         applyLighting(cur?.threedLight ?? 0);
         applyWireframe(cur?.threedWireframe ?? false);
         if (gridRef.current) gridRef.current.visible = cur?.threedGrid ?? true;
+
+        // 爆炸态恢复:直接到位不做动画,且须在首帧渲染前 apply(否则先渲染合拢态再跳变)
+        const k0 = cur?.threedExplode ?? 0;
+        explodeCurRef.current = k0;
+        applyExplode(k0);
 
         readyRef.current = true;
         setStatus("ready");
@@ -329,6 +347,8 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
       }
       mixerRef.current = null;
       clipsRef.current = [];
+      partsRef.current = [];
+      explodeCurRef.current = 0;
       modelRef.current = null;
       gridRef.current = null;
       sceneRef.current = null;
@@ -394,6 +414,17 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
       const dt = clockRef.current.getDelta();
       controls.update();
       mixerRef.current?.update(dt);
+      // 爆炸图:目标值(getState 读,免逐帧 setView 重渲染)→ damp 渐变(λ=6 ≈1s 收敛)。
+      // 爆炸态期间每帧 apply 而非仅未收敛时:mixer 每帧写节点位置,收敛后停手会被动画
+      // 拉回;置于 mixer.update 之后保证爆炸覆盖(被钉节点的位移动画在爆炸期间被抑制,可接受)。
+      const explodeTarget = useCellViewStore.getState().views[cellId]?.threedExplode ?? 0;
+      if (partsRef.current.length && (explodeCurRef.current !== 0 || explodeTarget !== 0)) {
+        explodeCurRef.current =
+          Math.abs(explodeCurRef.current - explodeTarget) > 1e-3
+            ? THREE.MathUtils.damp(explodeCurRef.current, explodeTarget, 6, dt)
+            : explodeTarget;
+        applyExplode(explodeCurRef.current);
+      }
       renderer.render(scene, camera);
     };
     loop();
@@ -490,6 +521,11 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
         toggleThreedWireframe: () => {
           const cur = useCellViewStore.getState().views[cellId]?.threedWireframe ?? false;
           setView(cellId, { threedWireframe: !cur });
+          schedulePersist();
+        },
+        toggleThreedExplode: () => {
+          const cur = useCellViewStore.getState().views[cellId]?.threedExplode ?? 0;
+          setView(cellId, { threedExplode: cur > 0 ? 0 : 1 });
           schedulePersist();
         },
         toggleThreedGrid: () => {

@@ -86,8 +86,11 @@ export function ConvertPanel() {
     }
   };
 
+  /** 转换前提醒(确认弹窗):有贴图转仅几何格式(丢贴图)/ 爆炸图开启(产物保留零件分离位置) */
+  const warnLossy = !!info?.hasTextures && LOSSY_FORMATS.includes(format);
+  const warnExploded = (view?.threedExplode ?? 0) > 0;
   const onConvertClick = () => {
-    if (info?.hasTextures && LOSSY_FORMATS.includes(format)) setWarnOpen(true);
+    if (warnLossy || warnExploded) setWarnOpen(true);
     else void doConvert();
   };
 
@@ -181,6 +184,8 @@ export function ConvertPanel() {
       <ConvertWarnModal
         open={warnOpen}
         format={format}
+        lossy={warnLossy}
+        exploded={warnExploded}
         hasAnim={(info?.animations ?? 0) > 0}
         onClose={() => setWarnOpen(false)}
         onConfirm={() => {
@@ -192,16 +197,22 @@ export function ConvertPanel() {
   );
 }
 
-/** 贴图丢失提醒(有贴图 → STL/OBJ/PLY):确认后才开始转换。骨架循 SettingsDialog。 */
+/** 转换前提醒(有贴图→STL/OBJ/PLY 丢贴图;爆炸图开启→产物保留分离位置):确认后才开始转换。骨架循 SettingsDialog。 */
 function ConvertWarnModal({
   open,
   format,
+  lossy,
+  exploded,
   hasAnim,
   onClose,
   onConfirm,
 }: {
   open: boolean;
   format: ThreedTargetFormat;
+  /** 有贴图 → 仅几何格式(丢贴图/材质,或含动画) */
+  lossy: boolean;
+  /** 爆炸图开启(导出的是活模型当前 transform,分离位置会被烘进产物) */
+  exploded: boolean;
   hasAnim: boolean;
   onClose: () => void;
   onConfirm: () => void;
@@ -228,7 +239,15 @@ function ConvertWarnModal({
           </button>
         </div>
         <div className="px-4 py-4 text-xs leading-relaxed">
-          转换到 {FORMAT_LABELS[format]} 将丢失贴图/材质{hasAnim ? "及动画" : ""},该操作不可恢复。是否继续?
+          {lossy && (
+            <div>转换到 {FORMAT_LABELS[format]} 将丢失贴图/材质{hasAnim ? "及动画" : ""},该操作不可恢复。</div>
+          )}
+          {exploded && (
+            <div className={lossy ? "mt-1.5" : undefined}>
+              模型处于爆炸状态,转换产物将保留零件分离位置(关闭爆炸图后转换可导出装配状态)。
+            </div>
+          )}
+          是否继续?
         </div>
         <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
           <button

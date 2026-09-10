@@ -70,6 +70,8 @@ export interface CellControl {
   toggleThreedAutoRotate?(): void;
   /** 3D:线框模式开关 */
   toggleThreedWireframe?(): void;
+  /** 3D:爆炸图开关(0↔1,渐变动画) */
+  toggleThreedExplode?(): void;
   /** 3D:平面网格显示开关 */
   toggleThreedGrid?(): void;
   /** 3D:光照环境切换(循环预设) */

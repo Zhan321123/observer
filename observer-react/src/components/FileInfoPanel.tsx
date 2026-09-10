@@ -166,6 +166,13 @@ export function FileInfoPanel() {
                 {view.threedInfo.vertices.toLocaleString()} / {view.threedInfo.triangles.toLocaleString()}
               </Row>
               <Row label="材质数">{view.threedInfo.materials}</Row>
+              <Row label="零件数">
+                {view.threedInfo.parts >= 2 ? (
+                  view.threedInfo.parts.toLocaleString()
+                ) : (
+                  <span className="text-text-dim/60">不支持爆炸图</span>
+                )}
+              </Row>
               <Row label="动画数">{view.threedInfo.animations}</Row>
               <Row label="包围盒">
                 {view.threedInfo.bbox.map(fmtDim).join(" × ")}
