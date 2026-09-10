@@ -12,7 +12,7 @@ import { getControl } from "../stores/cellControls";
 import { revealInExplorer, copyPath } from "../lib/tauri";
 import { formatTime } from "../lib/format";
 
-function BarButton({
+export function BarButton({
   title, onClick, disabled, children, active,
 }: {
   title: string;
@@ -35,7 +35,7 @@ function BarButton({
   );
 }
 
-const Sep = () => <div className="mx-1 h-5 w-px bg-line" />;
+export const Sep = () => <div className="mx-1 h-5 w-px bg-line" />;
 
 /**
  * 功能 frame(§5):对选中格操作,按文件类型动态切换按钮组。

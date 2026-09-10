@@ -188,6 +188,81 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).to_string()
 }
 
+// ---- 播放器页(§播放器):递归收集音频队列 ----
+
+/// 播放器队列条目(只带元数据;媒体字节走 asset:// / loopback,铁律 2)。
+#[derive(Serialize)]
+pub struct AudioFileEntry {
+    pub path: String,
+    pub name: String,
+    pub ext: String,
+}
+
+/// 递归收集的软上限:病态目录树(海量文件)护栏,达到即停止下探(已收集的照常返回)。
+const MAX_AUDIO_COLLECT: usize = 100_000;
+
+/// DFS 收集单个目录:每层目录在前(按名排序)逐个下探,再收本层文件(按名排序)——
+/// 与 list_dir 的排序语义一致,队列顺序 = 可预期的树遍历序。
+/// 跳 "." 开头隐藏项;符号链接/junction 一律跳过(list_dir 不递归无此顾虑,递归若跟随将成环)。
+fn collect_audio_dir(
+    dir: &Path,
+    exts: &std::collections::HashSet<String>,
+    out: &mut Vec<AudioFileEntry>,
+) -> std::io::Result<()> {
+    if out.len() >= MAX_AUDIO_COLLECT {
+        return Ok(());
+    }
+    let read = fs::read_dir(dir)?;
+    let mut dir_names: Vec<String> = Vec::new();
+    let mut files: Vec<AudioFileEntry> = Vec::new();
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        // file_type() 不 follow 链接:符号链接/junction 直接跳过(防环)
+        let ft = match entry.file_type() {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        let p = entry.path();
+        if ft.is_dir() {
+            dir_names.push(name);
+        } else {
+            let ext = ext_of(&p);
+            if exts.contains(&ext) {
+                files.push(AudioFileEntry { path: p.to_string_lossy().to_string(), name, ext });
+            }
+        }
+    }
+    dir_names.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    for d in dir_names {
+        collect_audio_dir(&dir.join(d), exts, out)?;
+    }
+    out.extend(files);
+    Ok(())
+}
+
+/// 递归收集目录树中的音频文件(播放器队列)。exts 由前端传入(音频扩展名全集的
+/// 唯一事实源在前端 registry,含 TRACKER 排除)。async:大目录递归走阻塞线程池,不占 IPC 主线程。
+#[tauri::command]
+pub async fn collect_audio_files(
+    path: String,
+    exts: Vec<String>,
+) -> Result<Vec<AudioFileEntry>, String> {
+    let set: std::collections::HashSet<String> =
+        exts.into_iter().map(|e| e.to_lowercase()).collect();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut out: Vec<AudioFileEntry> = Vec::new();
+        collect_audio_dir(Path::new(&path), &set, &mut out)
+            .map_err(|e| format!("无法读取目录 {path}: {e}"))?;
+        Ok(out)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 文件元数据(文件信息 frame)。
 #[tauri::command]
 pub fn file_stat(path: String) -> Result<FileStat, String> {
@@ -309,6 +384,35 @@ mod tests {
         // 纯 ASCII:文本正确即可(探测可能报 UTF-8)
         let r = check("ascii", b"plain ascii text");
         assert_eq!(r.text, "plain ascii text");
+    }
+
+    /// 播放器队列收集:DFS 顺序(每层目录在前文件在后、按名大小写不敏感排序)、
+    /// 扩展名过滤、隐藏项排除。
+    #[test]
+    fn collect_audio_files_orders_and_filters() {
+        let dir = std::env::temp_dir().join(format!("observer_collect_{}", std::process::id()));
+        let sub1 = dir.join("sub1");
+        let sub2 = dir.join("sub2");
+        fs::create_dir_all(&sub1).unwrap();
+        fs::create_dir_all(&sub2).unwrap();
+        fs::write(dir.join("b.mp3"), b"x").unwrap();
+        fs::write(dir.join("a.txt"), b"x").unwrap(); // 非音频扩展名
+        fs::write(dir.join(".hidden.mp3"), b"x").unwrap(); // 隐藏项
+        fs::write(sub1.join("z.mp3"), b"x").unwrap();
+        fs::write(sub1.join("a.mp3"), b"x").unwrap();
+        fs::write(sub2.join("m.flac"), b"x").unwrap();
+
+        let r = tauri::async_runtime::block_on(collect_audio_files(
+            dir.to_string_lossy().to_string(),
+            vec!["mp3".into(), "flac".into()],
+        ))
+        .expect("collect");
+
+        let names: Vec<&str> = r.iter().map(|e| e.name.as_str()).collect();
+        // DFS:sub1(a,z)→ sub2(m)→ 根(b);.hidden 与 .txt 排除
+        assert_eq!(names, ["a.mp3", "z.mp3", "m.flac", "b.mp3"]);
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     fn gen(args: &[&str], out: &std::path::Path) {

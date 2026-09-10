@@ -19,6 +19,14 @@ const MIDI = ["mid", "midi"];
 // Tracker/chiptune:libopenmpt 为 C 库、随包编译风险高,本轮保持优雅占位(不破坏构建)。
 const TRACKER = ["mod", "xm", "s3m", "it"];
 
+// 播放器页(§播放器)出口:队列/引擎路由用的扩展名分组(模块常量原本私有)。
+// NATIVE=原生 <audio> 直放;STREAM=FFmpeg loopback 流;MIDI=合成 wav;TRACKER 不支持不入列。
+export const NATIVE_AUDIO_EXTS = NATIVE;
+export const STREAM_AUDIO_EXTS = STREAM;
+export const MIDI_AUDIO_EXTS = MIDI;
+/** 播放器队列可入列的音频扩展名全集(不含 TRACKER 占位;本文件为唯一事实源) */
+export const playerQueueExts = (): string[] => [...NATIVE, ...STREAM, ...MIDI];
+
 export const audioHandler: FormatHandler = {
   name: "audio",
   exts: [...NATIVE, ...STREAM, ...MIDI, ...TRACKER],

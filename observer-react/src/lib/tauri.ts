@@ -11,6 +11,16 @@ export const assetUrl = (p: string) => convertFileSrc(p);
 
 export const listDir = (path: string) => invoke<DirEntry[]>("list_dir", { path });
 
+/** collect_audio_files 的返回:递归收集的音频文件(播放器队列;DFS 序=每层目录在前文件在后逐层下探) */
+export interface AudioFileEntry {
+  path: string;
+  name: string;
+  ext: string;
+}
+/** 递归收集目录树中扩展名命中的音频文件(exts 由前端 audio.ts 提供,TRACKER 排除;只传元数据) */
+export const collectAudioFiles = (path: string, exts: string[]) =>
+  invoke<AudioFileEntry[]>("collect_audio_files", { path, exts });
+
 /** read_text_file 的返回:解码文本 + 检测出的编码名(如 "UTF-8"/"GBK"/"UTF-16LE",供信息框) */
 export interface TextContent {
   text: string;

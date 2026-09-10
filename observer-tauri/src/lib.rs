@@ -35,6 +35,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_dir,
+            commands::collect_audio_files,
             commands::read_text_file,
             commands::file_stat,
             commands::reveal_in_explorer,

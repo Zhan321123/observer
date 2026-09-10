@@ -6,6 +6,8 @@
 import { useGridStore, type CellState } from "../stores/gridStore";
 import { useFolderStore } from "../stores/folderStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useUiStore } from "../stores/uiStore";
+import { usePlayerStore, setPersistedTrackPath } from "../stores/playerStore";
 import { stateGet, stateSet } from "./persist";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
@@ -15,7 +17,10 @@ const KEY_GRID = "grid";
 const KEY_FOLDER = "folder";
 const KEY_SETTINGS = "settings";
 const KEY_WINDOW = "window";
+const KEY_WINDOW_MINI = "windowMini";
 const KEY_TREE = "treeExpanded";
+const KEY_PAGE = "page";
+const KEY_PLAYER = "player";
 
 interface PersistedGrid {
   cols: number;
@@ -42,6 +47,32 @@ export async function bootstrap(): Promise<void> {
   try {
     const raw = await stateGet(KEY_SETTINGS);
     if (raw) useSettingsStore.getState().hydrate(JSON.parse(raw));
+  } catch {
+    // 还原失败用默认值
+  }
+
+  // 0.6 页面 + 播放器(上次所在页面;播放器顺序/显示/当前曲——队列进播放器页时按当前文件夹
+  // 重建,trackPath 供 buildQueue 定位恢复;每曲位置/音量/倍速在 media_position,引擎自理)
+  try {
+    const raw = await stateGet(KEY_PAGE);
+    if (raw === "player" || raw === "grid") useUiStore.getState().hydrate({ page: raw });
+  } catch {
+    // 还原失败用默认 grid
+  }
+  try {
+    const raw = await stateGet(KEY_PLAYER);
+    if (raw) {
+      const p = JSON.parse(raw) as {
+        order?: string;
+        display?: string;
+        trackPath?: string | null;
+      };
+      setPersistedTrackPath(typeof p.trackPath === "string" ? p.trackPath : null);
+      usePlayerStore.getState().hydrate({
+        order: p.order === "reverse" || p.order === "shuffle" || p.order === "repeat-one" ? p.order : "seq",
+        display: p.display === "wave" || p.display === "none" ? p.display : "bars",
+      });
+    }
   } catch {
     // 还原失败用默认值
   }
@@ -164,7 +195,39 @@ export function startPersistence(): void {
     }, 500);
   });
 
-  // 窗口尺寸(resize → 防抖写回逻辑尺寸,与 bootstrap 的 LogicalSize 还原对应)
+  // 播放器页(整页切换):page 变化 → 防抖写回
+  let pageTimer: ReturnType<typeof setTimeout> | null = null;
+  useUiStore.subscribe(() => {
+    if (pageTimer) clearTimeout(pageTimer);
+    pageTimer = setTimeout(() => {
+      void stateSet(KEY_PAGE, useUiStore.getState().page).catch(() => {});
+    }, 500);
+  });
+
+  // 播放器(顺序/显示/当前曲 path):订阅必须带比较器——引擎 timeupdate 高频 set store,
+  // 只有三元组变化才写(手写持久化字段,严禁整 store stringify:含 AnalyserNode 非序列化对象)
+  let playerTimer: ReturnType<typeof setTimeout> | null = null;
+  usePlayerStore.subscribe((s, prev) => {
+    const cur = s.queue[s.index]?.path ?? null;
+    const prevCur = prev.queue[prev.index]?.path ?? null;
+    if (s.order === prev.order && s.display === prev.display && cur === prevCur) return;
+    if (playerTimer) clearTimeout(playerTimer);
+    playerTimer = setTimeout(() => {
+      const st = usePlayerStore.getState();
+      void stateSet(
+        KEY_PLAYER,
+        JSON.stringify({
+          order: st.order,
+          display: st.display,
+          trackPath: st.queue[st.index]?.path ?? null,
+        })
+      ).catch(() => {});
+    }, 500);
+  });
+
+  // 窗口尺寸(resize → 防抖写回逻辑尺寸,与 bootstrap 的 LogicalSize 还原对应)。
+  // 小窗模式(迭代二)写独立键 windowMini:完整窗口尺寸不被迷你尺寸污染;
+  // 进/出小窗的程序化 setSize 也触发本回调,useMiniWindow 先改 store 再动窗口 → 各写各的键,幂等。
   let winTimer: ReturnType<typeof setTimeout> | null = null;
   void getCurrentWindow().onResized(() => {
     if (winTimer) clearTimeout(winTimer);
@@ -174,8 +237,9 @@ export function startPersistence(): void {
         const scale = await win.scaleFactor().catch(() => 1);
         const phys = await win.innerSize().catch(() => null);
         if (!phys) return;
+        const key = useUiStore.getState().mini ? KEY_WINDOW_MINI : KEY_WINDOW;
         void stateSet(
-          KEY_WINDOW,
+          key,
           JSON.stringify({
             width: Math.round(phys.width / scale),
             height: Math.round(phys.height / scale),

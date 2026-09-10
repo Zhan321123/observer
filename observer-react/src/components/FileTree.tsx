@@ -4,6 +4,9 @@ import { ChevronRight, ChevronDown, Folder } from "lucide-react";
 import { useFolderStore, type TreeNode } from "../stores/folderStore";
 import { useGridStore } from "../stores/gridStore";
 import { useContextMenuStore } from "../stores/contextMenuStore";
+import { useUiStore } from "../stores/uiStore";
+import { usePlayerStore, setPersistedTrackPath } from "../stores/playerStore";
+import { playerQueueExts } from "../formats/handlers/audio";
 import { kindForExt } from "../formats/registry";
 import { detectFormat } from "../lib/tauri";
 import { startPointerDrag, suppressClickAfterDrag } from "../lib/pointerDrag";
@@ -48,11 +51,16 @@ function deepestVisibleDir(nodes: TreeNode[], selPath: string): string | null {
   return null;
 }
 
-/** 把展开的树扁平化为可见行数组(虚拟滚动的前提;expanded 的目录才下钻)。 */
-function flatten(nodes: TreeNode[], depth: number, out: FlatRow[]) {
+/** 播放器页的音频过滤集(与队列同源:playerQueueExts,TRACKER 不显示;文件夹节点保留) */
+const AUDIO_QUEUE_EXTS = new Set(playerQueueExts().map((e) => e.toLowerCase()));
+
+/** 把展开的树扁平化为可见行数组(虚拟滚动的前提;expanded 的目录才下钻)。
+ *  audioOnly(播放器页):非音频文件跳过,只剩文件夹 + 可入列音频。 */
+function flatten(nodes: TreeNode[], depth: number, out: FlatRow[], audioOnly: boolean) {
   for (const n of nodes) {
+    if (audioOnly && !n.entry.is_dir && !AUDIO_QUEUE_EXTS.has(n.entry.ext.toLowerCase())) continue;
     out.push({ node: n, depth });
-    if (n.entry.is_dir && n.expanded && n.children) flatten(n.children, depth + 1, out);
+    if (n.entry.is_dir && n.expanded && n.children) flatten(n.children, depth + 1, out, audioOnly);
   }
 }
 
@@ -91,7 +99,19 @@ function FileRow({ node, depth, active }: RowProps) {
 
   const onClickFile = async () => {
     if (suppressClickAfterDrag()) return; // 拖拽松手后的残余 click 不触发
-    // 经 detect_format 嗅探(区分 .ts 视频 / TypeScript、.json Lottie 等),失败回退扩展名判断
+    // 播放器页(迭代二):文件树承担选曲——点击 = 跳播;不在队列(新出现的文件)→ 重建队列并定位
+    if (useUiStore.getState().page === "player") {
+      const st = usePlayerStore.getState();
+      if (st.queueLoading) return;
+      const i = st.queue.findIndex((t) => t.path === entry.path);
+      if (i >= 0) st.jumpTo(i);
+      else {
+        setPersistedTrackPath(entry.path);
+        void st.buildQueue(useFolderStore.getState().rootPath);
+      }
+      return;
+    }
+    // 宫格页:经 detect_format 嗅探(区分 .ts 视频 / TypeScript、.json Lottie 等),失败回退扩展名判断
     const d = await detectFormat(entry.path).catch(() => null);
     placeFile({
       path: entry.path,
@@ -135,18 +155,23 @@ export function FileTree() {
   const loading = useFolderStore((s) => s.loading);
   const error = useFolderStore((s) => s.error);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const page = useUiStore((s) => s.page);
+  const audioOnly = page === "player";
   // 选中宫格中的文件路径:树中同路径的行联动高亮(拖入的文件不在当前文件夹时自然无高亮)
-  const selPath = useGridStore((s) => {
+  const gridSelPath = useGridStore((s) => {
     const i = s.selected;
     return i != null ? (s.cells[i]?.file?.path ?? null) : null;
   });
+  // 播放器页:高亮源换成正在播放的曲目(补回队列列表的"当前曲高亮",迭代二)
+  const playerPath = usePlayerStore((s) => (s.index >= 0 ? s.queue[s.index]?.path ?? null : null));
+  const selPath = audioOnly ? playerPath : gridSelPath;
 
   // 展开的树 → 扁平可见行(toggleDir/refresh 改变 rootChildren 引用时重算)
   const flat = useMemo(() => {
     const out: FlatRow[] = [];
-    flatten(rootChildren, 0, out);
+    flatten(rootChildren, 0, out, audioOnly);
     return out;
-  }, [rootChildren]);
+  }, [rootChildren, audioOnly]);
 
   // 文件行不可见(被折叠目录包住/被过滤)→ 高亮包含它的最深可见目录
   const activeDirPath = useMemo(() => {
@@ -167,8 +192,12 @@ export function FileTree() {
   if (error) {
     return <div className="p-3 text-xs text-danger">打开失败:{error}</div>;
   }
-  if (rootChildren.length === 0) {
-    return <div className="p-3 text-xs text-text-dim">此文件夹暂无可预览内容</div>;
+  if (flat.length === 0) {
+    return (
+      <div className="p-3 text-xs text-text-dim">
+        {audioOnly ? "此文件夹没有音频文件" : "此文件夹暂无可预览内容"}
+      </div>
+    );
   }
 
   return (
