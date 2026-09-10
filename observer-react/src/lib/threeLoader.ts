@@ -1,10 +1,12 @@
 // 3D 模型加载(method.md §6):扩展名 → three.js loader 分发,统一归一化为
 // { object, animations, info }。字节经 asset:// fetch(铁律 2);外部资源(gltf 的 .bin/贴图、
 // obj 的 .mtl/贴图、dae 贴图)经 LoadingManager URL 改写解析为同目录 asset:// 文件。
+// glb/gltf 另支持 EXT_meshopt_compression + KHR_mesh_quantization(见下方 MeshoptDecoder)。
 // three 全量(含各 loader)体积大,本模块由 ThreeView 动态 import 做代码分割,不拖累主包。
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
@@ -136,7 +138,11 @@ export async function loadThreeModel(file: FileRef): Promise<LoadedModel> {
   switch (ext) {
     case "gltf":
     case "glb": {
-      const gltf = await new GLTFLoader(manager).parseAsync(buf, "");
+      // EXT_meshopt_compression(网站常用的 meshopt 压缩 GLB,如 Tripo)需挂 MeshoptDecoder
+      // (WASM 解码,WebView2 支持);KHR_mesh_quantization GLTFLoader 原生支持,无需处理。
+      const loader = new GLTFLoader(manager);
+      loader.setMeshoptDecoder(MeshoptDecoder);
+      const gltf = await loader.parseAsync(buf, "");
       object = gltf.scene || gltf.scenes?.[0];
       animations = gltf.animations ?? [];
       break;

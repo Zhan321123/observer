@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { acquireThreeModel, releaseThreeModel, disposeThreeObject } from "../../lib/threeModelCache";
 import { threedGet, threedSet } from "../../lib/persist";
 import { useCellViewStore } from "../../stores/cellViewStore";
@@ -20,6 +21,13 @@ interface PersistedView {
 
 /** 光照环境预设(cycleThreedLight 循环;无阴影保性能) */
 const LIGHT_PRESETS = ["studio", "soft", "bright"] as const;
+
+/** 各光照预设的环境贴图(IBL)强度(scene.environmentIntensity) */
+const ENV_INTENSITY: Record<(typeof LIGHT_PRESETS)[number], number> = {
+  studio: 1.0,
+  soft: 0.5,
+  bright: 1.3,
+};
 
 /**
  * 3D 预览(M4,method.md §6 / layout.md §4.5·§5)。
@@ -161,6 +169,9 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
     if (!lights) return;
     while (lights.children.length) lights.remove(lights.children[0]);
     const preset = LIGHT_PRESETS[idx % LIGHT_PRESETS.length];
+    // 环境贴图强度随预设联动(GPU 期才挂 env;CPU 期先设强度,激活后即生效)
+    const scene = lights.parent as THREE.Scene | null;
+    if (scene) scene.environmentIntensity = ENV_INTENSITY[preset];
     if (preset === "studio") {
       lights.add(new THREE.HemisphereLight(0xffffff, 0x3a4552, 1.0));
       const key = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -345,6 +356,15 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    // PBR 图像照明(IBL):metalness≈1 的 glTF 材质固有色只走镜面反射,纯直射光下呈灰白
+    // (FBX/STL 等漫反射材质不受影响)。RoomEnvironment 现烘环境贴图,无需外部 HDR;
+    // ACES 色调映射防金属高光过曝。env 绑定本 renderer 的 GL 上下文,随其创建/释放。
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
+    pmrem.dispose();
+    scene.environment = envRT.texture;
+
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.12;
@@ -388,6 +408,8 @@ export function ThreeView({ file, cellId, active }: PreviewProps) {
 
     return () => {
       ro.disconnect();
+      scene.environment = null;
+      envRT.dispose();
       disposeRenderer();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
