@@ -99,13 +99,13 @@ WebView WebGL 渲染，与 Electron 零差距。[three.js loaders](https://mcpma
 | PDF | .pdf | pdf.js |
 | 代码/文本/markdown | — | 语法高亮 + markdown 渲染 |
 
-## 8. 转换方法预留（未来，M5）
+## 8. 转换方法(3D 与图片已上线,音视频待接)
 
 | 类别 | 方法 |
 |---|---|
-| 视频/音频 | FFmpeg 命令模板库（与预览同一 sidecar） |
-| 图片 | rawler/image/heic 解码 → image crate 编码（png/jpg/webp/tiff；AVIF 编码用 ravif） |
-| 3D | 前端 three.js exporter（GLB/STL/OBJ/PLY）先行；重量级（FBX→glTF 带动画）上 Rust 侧 assimp（russimp） |
+| 视频/音频 | FFmpeg 命令模板库(与预览同一 sidecar),待接 |
+| 图片 | 解码复用 §5 管道(image/psd/heic/rawler + SVG 经 resvg 栅格化)→ image crate 编码 png/jpg/webp/tiff/bmp/ico/gif(Rust 内全程,`imgconvert.rs`);EXIF 方向应用、元数据不随转;AVIF 编码(ravif)与 AVIF 源解码(dav1d/ffmpeg)均未启用 |
+| 3D | 前端 three.js exporter(GLB/STL/OBJ/PLY)先行;重量级(FBX→glTF 带动画)上 Rust 侧 assimp(russimp) |
 
 ## 9. 压缩包（task2：目录树预览，不解压包内文件）
 

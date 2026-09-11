@@ -11,7 +11,7 @@ const MAX_PIXELS: f64 = 100_000_000.0;
 
 /// RAW 扩展名(rrawler 解码;与前端 image handler / 后端 kind_for_ext 路由一致)。
 /// task2 一补 pef/srw/x3f/iiq(rawler 已支持);个别机型解码失败走 Err → 前端错误占位,优雅降级。
-fn is_raw_ext(ext: &str) -> bool {
+pub(crate) fn is_raw_ext(ext: &str) -> bool {
     matches!(
         ext,
         "cr2" | "cr3" | "nef" | "arw" | "orf" | "rw2" | "dng" | "raf" | "pef" | "srw" | "x3f" | "iiq"
@@ -36,7 +36,28 @@ fn cache_key(path: &str, meta: &std::fs::Metadata) -> String {
     format!("{:x}", h.finish())
 }
 
+/// 扩展名 → image crate 格式(imgdec 预览与 imgconvert 转换共用的单一映射;
+/// 编解码能力差异由各自调用方负责,如 DDS 只能解码)。
+pub(crate) fn image_format_for_ext(ext: &str) -> Option<image::ImageFormat> {
+    match ext {
+        "png" | "apng" => Some(image::ImageFormat::Png),
+        "jpg" | "jpeg" => Some(image::ImageFormat::Jpeg),
+        "webp" => Some(image::ImageFormat::WebP),
+        "gif" => Some(image::ImageFormat::Gif),
+        "bmp" => Some(image::ImageFormat::Bmp),
+        "ico" => Some(image::ImageFormat::Ico),
+        "tiff" | "tif" => Some(image::ImageFormat::Tiff),
+        "tga" => Some(image::ImageFormat::Tga),
+        "dds" => Some(image::ImageFormat::Dds),
+        "qoi" => Some(image::ImageFormat::Qoi),
+        "hdr" => Some(image::ImageFormat::Hdr),
+        "exr" => Some(image::ImageFormat::OpenExr),
+        _ => None,
+    }
+}
+
 /// 解码为 DynamicImage(按扩展名分发;psd/heic 走专用 crate,其余走 image crate 指定格式)。
+/// 预览管道只服务 DECODE_RUST 集(tiff/tga/dds/qoi/hdr/exr),原生可显格式不进此函数。
 fn decode(bytes: &[u8], ext: &str) -> Result<image::DynamicImage, String> {
     if matches!(ext, "psd" | "psb") {
         return decode_psd(bytes);
@@ -44,20 +65,13 @@ fn decode(bytes: &[u8], ext: &str) -> Result<image::DynamicImage, String> {
     if matches!(ext, "heic" | "heif") {
         return decode_heic(bytes);
     }
-    let fmt = match ext {
-        "tiff" | "tif" => image::ImageFormat::Tiff,
-        "tga" => image::ImageFormat::Tga,
-        "dds" => image::ImageFormat::Dds,
-        "qoi" => image::ImageFormat::Qoi,
-        "hdr" => image::ImageFormat::Hdr,
-        "exr" => image::ImageFormat::OpenExr,
-        other => return Err(format!("暂不支持解码的图片格式: {other}")),
-    };
+    let fmt =
+        image_format_for_ext(ext).ok_or_else(|| format!("暂不支持解码的图片格式: {ext}"))?;
     image::load_from_memory_with_format(bytes, fmt).map_err(|e| format!("解码失败: {e}"))
 }
 
 /// HEIC/HEIF 解码(heic crate,纯 Rust HEVC)→ RGBA8。
-fn decode_heic(bytes: &[u8]) -> Result<image::DynamicImage, String> {
+pub(crate) fn decode_heic(bytes: &[u8]) -> Result<image::DynamicImage, String> {
     let out = heic::DecoderConfig::new()
         .decode(bytes, heic::PixelLayout::Rgba8)
         .map_err(|e| format!("HEIC 解码失败: {e}"))?;
@@ -67,7 +81,7 @@ fn decode_heic(bytes: &[u8]) -> Result<image::DynamicImage, String> {
 }
 
 /// RAW 解码(rrawler,纯 Rust):demosaic + 白平衡 + sRGB 显影 → DynamicImage(后续统一转 RGBA8)。
-fn decode_raw(path: &Path) -> Result<image::DynamicImage, String> {
+pub(crate) fn decode_raw(path: &Path) -> Result<image::DynamicImage, String> {
     let raw = rawler::decode_file(path).map_err(|e| format!("RAW 解析失败: {e}"))?;
     let developed = rawler::imgop::develop::RawDevelop::default()
         .develop_intermediate(&raw)
@@ -78,7 +92,7 @@ fn decode_raw(path: &Path) -> Result<image::DynamicImage, String> {
 }
 
 /// PSD/PSB:取合成图(所有图层拍平)→ RGBA8。
-fn decode_psd(bytes: &[u8]) -> Result<image::DynamicImage, String> {
+pub(crate) fn decode_psd(bytes: &[u8]) -> Result<image::DynamicImage, String> {
     let psd = psd::Psd::from_bytes(bytes).map_err(|e| format!("PSD 解析失败: {e:?}"))?;
     let (w, h) = (psd.width(), psd.height());
     let rgba = psd.rgba();

@@ -5,6 +5,7 @@ mod convert;
 mod db;
 mod ffmpeg;
 mod formats;
+mod imgconvert;
 mod imgdec;
 mod sqlite;
 
@@ -44,6 +45,8 @@ pub fn run() {
             commands::allow_asset_path,
             commands::resolve_link,
             convert::convert_write,
+            imgconvert::image_info,
+            imgconvert::convert_image,
             db::app_state_get,
             db::app_state_set,
             db::history_open,

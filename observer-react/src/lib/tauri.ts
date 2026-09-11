@@ -129,3 +129,23 @@ export function bytesToBase64(bytes: Uint8Array): string {
  *  asset:// 输入管道不适用;v1 以 base64 走 JSON 单命令(单任务、MB 级,~1.33x 膨胀可接受)。 */
 export const convertWrite = (dir: string, filename: string, dataB64: string) =>
   invoke<string>("convert_write", { dir, filename, dataB64 });
+
+// ---- M5 格式转换(第二片:图片;字节全程不出 Rust,IPC 只传路径/格式/返回路径) ----
+
+/** image_info 的返回:只读文件头的轻量嗅探(不解码像素),供确认弹窗判定警告 */
+export interface ImageInfo {
+  width: number;
+  height: number;
+  /** 格式级判断(非像素级),措辞用"可能" */
+  hasAlpha: boolean;
+  animated: boolean;
+  frameCount: number;
+  icoCount: number;
+  /** 0 = 未知按 8 处理;16/32 → 转 8bit 目标时提醒降深度 */
+  bitDepth: number;
+}
+export const imageInfo = (path: string) => invoke<ImageInfo>("image_info", { path });
+/** convert_image:Rust 内 解码(EXIF 方向)→编码→命名去重落盘,返回全部写出路径
+ *  (多图输出:动画源拆帧 _001 起;多条目 ICO 按尺寸 _256)。 */
+export const convertImage = (path: string, format: string, outDir: string) =>
+  invoke<string[]>("convert_image", { path, format, outDir });

@@ -14,7 +14,8 @@ const MAX_DEDUPE: u32 = 9999;
 
 /// 目录内首个未占用路径:优先原名,被占则 `stem (n).ext`(n 从 1 起)。
 /// 多级后缀按最后一段扩展名拆(model.v1.glb → model.v1 (1).glb);无扩展名 README → README (1)。
-fn unique_path(dir: &Path, filename: &str) -> Result<PathBuf, String> {
+/// 图片转换(imgconvert)复用同一去重规则,故 pub(crate)。
+pub(crate) fn unique_path(dir: &Path, filename: &str) -> Result<PathBuf, String> {
     let p = Path::new(filename);
     let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or(filename);
     let ext = p.extension().and_then(|e| e.to_str());
@@ -41,7 +42,7 @@ fn unique_path(dir: &Path, filename: &str) -> Result<PathBuf, String> {
 
 /// 同目录临时文件 + rename 原子落位(避免半写成品被当作有效文件)。
 /// Windows 的 rename 不覆盖已存在文件,与 unique_path 配合天然成立;失败时清理临时文件。
-fn write_atomic(final_path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn write_atomic(final_path: &Path, bytes: &[u8]) -> Result<(), String> {
     let file_name = final_path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())

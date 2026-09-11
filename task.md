@@ -25,10 +25,10 @@
 
 ## M5 — 格式转换
 
-3D 类别已上线(单任务、按钮级 busy,无队列/进度);其余类别仍占位(架构已按 design.md §4 预留)。
+3D 与图片类别已上线(单任务、按钮级 busy,一律先确认弹窗,无队列/进度);其余类别仍占位(架构已按 design.md §4 预留)。
 
 - [ ] Job 引擎加 Convert 出口(与预览共用同一管道)
 - [ ] FFmpeg 命令模板库(视频/音频转换)
-- [ ] 图片编解码(解码 → image crate 编码 png/jpg/webp/tiff;AVIF 用 ravif)
+- [x] 图片编解码(解码 → image crate 编码 png/jpg/webp/tiff/bmp/ico/gif;解码复用 M2 管道含 RAW/PSD/HEIC,SVG/SVGZ 经 resvg 栅格化,EXIF 方向自动应用、元数据不随转;动画 GIF/APNG/动画 WebP 拆帧 `_001` 起编号或重编码 GIF 保留帧延时;多条目 ICO 按尺寸 `_256` 命名;透明→JPEG 白底压平并提醒;16bit 源→PNG/TIFF 保位深、→8bit 目标提醒降深度;JPEG 固定 q90;**限制:AVIF 源不可转(缺纯 Rust 解码器)、AVIF 输出(ravif)未启用、WebP 仅无损(image-webp 上游现状)、多页 TIFF 取首页**)
 - [x] 3D 导出(three.js exporter GLB/GLTF/STL/OBJ/PLY;贴图内嵌 GLB/GLTF,STL/OBJ/PLY 仅几何——源有贴图时弹提醒,有动画时文案含动画;输出重名自动 " (n)" 绝不覆盖;无 Mesh 源[点云/线段/骨骼]仅 GLB/GLTF;Draco/KTX2 源仍无法加载,见上方补强项)
-- [ ] 转换 frame UI:3D 类别已上线(目标格式下拉 + 输出目录[默认同目录] + 提醒框 + 结果反馈);参数选择、任务提交队列、进度显示及图片/音视频类别待接
+- [ ] 转换 frame UI:3D 与图片类别已上线(目标格式下拉 + 输出目录[默认同目录] + 确认弹窗[一律先确认,无警告时显示摘要] + 警告矩阵[丢透明/多图/降位深/GIF 量化/ICO 超 256] + 多文件结果反馈);参数选择、任务提交队列、进度显示及音视频类别待接
