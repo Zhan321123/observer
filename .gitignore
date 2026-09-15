@@ -8,6 +8,8 @@ observer-react/.vite/
 # Rust / Tauri(体积大,全可再生)
 observer-tauri/target/
 observer-tauri/gen/schemas/
+# Docker Linux 打包产物(Dockerfile.linux)
+linux-bundle/
 
 # ===== Claude Code =====
 .claude/

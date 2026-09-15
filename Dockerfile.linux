@@ -1,0 +1,93 @@
+# syntax=docker/dockerfile:1
+# Observer Linux 打包(framework.md §6.1):Ubuntu 22.04 内原生构建(x86_64,非交叉)。
+# Tauri 无官方 Docker 镜像(github.com/tauri-apps/tauri/issues/14362),依赖按
+# v2.tauri.app/start/prerequisites 清单自装;选 22.04 是为了 glibc 2.35 兼容面 +
+# AppImage 仅在 Ubuntu 上打包最稳(v2.tauri.app/distribute/appimage)。
+#
+# 用法(仓库根目录执行,共两步):
+#   1. 宿主机构建前端(产物平台无关,随上下文进容器):
+#      pnpm --dir observer-react build
+#   2. docker buildx build -f Dockerfile.linux --target bundles --output ./linux-bundle .
+# 产物:linux-bundle/{deb,rpm,appimage}/
+#
+# 策略(容器访问国外源不稳定,ghcr/nodesource 先后挂过):
+# - 容器内**不装 Node/pnpm**:前端在宿主机 vite 构建,Dockerfile 只做 Rust 侧。
+# - beforeBuildCommand 由 tauri.linux.json 置空(dist 已就位)。
+# - cargo 编译与 bundling 拆成两层:bundling(要联网下 linuxdeploy)失败重跑时,
+#   不必重新编译整个 Rust 工程。
+# - cargo registry/git 走缓存卷;CARGO_NET_RETRY 加大抗抖动。
+
+FROM ubuntu:22.04 AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Tauri v2 Linux 系统依赖(webkit2gtk-4.1 是 v2 与 v1 的分水岭)+ 构建 Utils
+# git 供 cargo git 依赖兜底;file 在 Tauri 官方清单内。
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential curl wget file git pkg-config ca-certificates \
+      libwebkit2gtk-4.1-dev \
+      libssl-dev \
+      libxdo-dev \
+      libayatana-appindicator3-dev \
+      librsvg2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Rust stable(rust-version 1.77.2+)
+# 注:rustup.rs 脚本默认装 $HOME/.cargo(root 即 /root/.cargo),非 /usr/local/cargo
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --profile minimal
+ENV PATH=/root/.cargo/bin:$PATH
+
+# 网络对 crates.io 偏弱,加大重试
+ENV CARGO_NET_RETRY=10
+
+# Tauri CLI cargo 版(与宿主机 @tauri-apps/cli 2.11.4 对齐)。
+# 放源码 COPY 之前:改应用代码不触发 CLI 重装。
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    cargo install tauri-cli --version 2.11.4 --locked
+
+# 容器内无 FUSE,linuxdeploy 以解压模式执行(打 AppImage 必需)
+ENV APPIMAGE_EXTRACT_AND_RUN=1 \
+    NO_STRIP=true
+
+WORKDIR /project
+
+# 前端 dist 已在宿主机构建(COPY 进来);tauri.linux.json 置空 beforeBuildCommand
+COPY tauri.linux.json /project/
+COPY observer-react/ /project/observer-react/
+COPY observer-tauri/ /project/observer-tauri/
+
+WORKDIR /project/observer-tauri
+# 纯 cargo 编译,独立成层(custom-protocol 与 tauri build 的 release 调用一致,
+# 后续 tauri build 增量秒过)
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    cargo build --release --features tauri/custom-protocol
+
+# 打包 deb/rpm(纯本地无网络依赖;可执行名是 cargo-tauri,经 cargo 子命令调用)
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    cargo tauri build --bundles deb,rpm --config /project/tauri.linux.json
+
+# AppImage 需要系统 xdg-open(bundler 会收集进镜像);单独成层,避免改 apt 大层触发全量重编
+RUN apt-get update && apt-get install -y --no-install-recommends xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# 打包 AppImage(需从 GitHub 下载 linuxdeploy/AppRun,容器网络间歇拒绝连接:
+# 重试 5 次;/root/.cache/tauri 挂缓存卷让下到的工具跨失败层留存,逐次续接近成功)
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/root/.cache/tauri \
+    bash -c 'for i in 1 2 3 4 5; do \
+      cargo tauri build --bundles appimage --config /project/tauri.linux.json && exit 0; \
+      echo "== appimage attempt $i failed, retrying =="; sleep 8; \
+    done; exit 1'
+
+# 仅导出三个安装包文件(--output 写到宿主机 linux-bundle/)。
+# 不整目录导出:appimage/ 下的 Observer.AppDir 中间产物含符号链接,
+# Windows 无特权建 symlink 会报 "A required privilege is not held by the client"。
+FROM scratch AS bundles
+COPY --from=build /project/observer-tauri/target/release/bundle/deb/*.deb /deb/
+COPY --from=build /project/observer-tauri/target/release/bundle/rpm/*.rpm /rpm/
+COPY --from=build /project/observer-tauri/target/release/bundle/appimage/*.AppImage /appimage/

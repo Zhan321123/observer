@@ -1,0 +1,16 @@
+# Docker 构建上下文瘦身(Dockerfile.linux 用;与 .gitignore 大体同源)
+.git
+.codegraph
+.claude
+docs
+assets
+observer.png
+linux-bundle
+*.log
+
+# Windows 侧依赖与产物(容器内重新生成,平台不符绝不能进镜像)
+# 注意:observer-react/dist 例外——前端在宿主机构建,产物随上下文进容器
+observer-react/node_modules
+observer-tauri/node_modules
+observer-tauri/target
+observer-tauri/gen/schemas

@@ -104,3 +104,7 @@
 - [ ] 超大文本（GiB 级）一次性读入渲染（现有 10MB 阈值 + 确认门槛，后端 1 GiB 护栏；真正的流式/分块渲染未做）
 - [ ] 平台验证：仅 Windows；macOS（sidecar 需签名公证）、Linux（WebKitGTK 编解码差，§6.1 暂缓）未做
 - [ ] FFmpeg 随包分发：当前依赖 PATH/环境变量；打包需 externalBin 放置二进制并处理许可（LGPL 解码构建 vs 本机 GPL 含 x264）
+
+## 9. Bugging，在docs/debugging/里存放关键链路问题
+
+- debuggingObserverExe: 调试 Observer 打包版（observer.exe）行为关键事实
