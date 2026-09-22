@@ -1,11 +1,13 @@
 // 3D 模型加载(method.md §6):扩展名 → three.js loader 分发,统一归一化为
 // { object, animations, info }。字节经 asset:// fetch(铁律 2);外部资源(gltf 的 .bin/贴图、
 // obj 的 .mtl/贴图、dae 贴图)经 LoadingManager URL 改写解析为同目录 asset:// 文件。
-// glb/gltf 另支持 EXT_meshopt_compression + KHR_mesh_quantization(见下方 MeshoptDecoder)。
+// glb/gltf 另支持 EXT_meshopt_compression + KHR_mesh_quantization(见下方 MeshoptDecoder),
+// 以及 KHR_draco_mesh_compression(见下方 DRACOLoader,解码器文件在 public/draco/)。
 // three 全量(含各 loader)体积大,本模块由 ThreeView 动态 import 做代码分割,不拖累主包。
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
@@ -87,6 +89,20 @@ function makeManager(modelPath: string): THREE.LoadingManager {
     return assetUrl(abs);
   });
   return manager;
+}
+
+/** Draco 解码器(KHR_draco_mesh_compression)。单例:解码器 WASM 只初始化一次。
+ *  解码器文件在 public/draco/(拷自 three/examples/jsm/libs/draco/gltf/,Vite 原样入 dist);
+ *  不能用默认的 gstatic CDN —— 打包版 CSP(script-src 'self')不允许外链脚本。
+ *  必须挂自己的 manager:若复用 makeManager 的 manager,decoderPath 会被 URL 改写
+ *  曲解成模型同目录的 asset:// 路径,解码器文件加载失败。 */
+let dracoLoader: DRACOLoader | null = null;
+function getDracoLoader(): DRACOLoader {
+  if (!dracoLoader) {
+    dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath("/draco/");
+  }
+  return dracoLoader;
 }
 
 function toText(buf: ArrayBuffer): string {
@@ -235,6 +251,7 @@ export async function loadThreeModel(file: FileRef): Promise<LoadedModel> {
       // (WASM 解码,WebView2 支持);KHR_mesh_quantization GLTFLoader 原生支持,无需处理。
       const loader = new GLTFLoader(manager);
       loader.setMeshoptDecoder(MeshoptDecoder);
+      loader.setDRACOLoader(getDracoLoader());
       const gltf = await loader.parseAsync(buf, "");
       object = gltf.scene || gltf.scenes?.[0];
       animations = gltf.animations ?? [];
