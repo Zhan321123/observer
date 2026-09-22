@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Copy } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
 import { useCellViewStore } from "../stores/cellViewStore";
-import { fileStat, detectFormat, assetUrl, copyPath, ffprobeMeta } from "../lib/tauri";
+import { fileStat, detectFormat, assetUrl, copyPath, ffprobeMeta, imageInfo } from "../lib/tauri";
 import { readExif, type ExifSummary } from "../lib/exif";
+import { DECODE_RUST } from "../formats/handlers/image";
 import { formatBytes, formatDateTime, formatTime } from "../lib/format";
 import type { FileStat, DetectResult, VideoMeta } from "../types/file";
 
@@ -42,10 +43,22 @@ export function FileInfoPanel() {
     fileStat(file.path).then((s) => !cancelled && setStat(s)).catch(() => {});
     detectFormat(file.path).then((d) => !cancelled && setDetect(d)).catch(() => {});
     if (file.kind === "image") {
-      const img = new Image();
-      img.onload = () => !cancelled && setImgRes(`${img.naturalWidth} × ${img.naturalHeight}`);
-      img.onerror = () => {};
-      img.src = assetUrl(file.path);
+      if (DECODE_RUST.includes(file.ext)) {
+        // WebView 不能直读(tiff/exr/hdr…):image_info 只读文件头拿原始宽高(不解码像素);
+        // psd/heic/raw 头部未解析(width=0)→ 不显示,与原生加载失败行为一致
+        imageInfo(file.path)
+          .then((r) => {
+            if (cancelled || r.width === 0) return;
+            const depth = r.bitDepth >= 16 ? ` · ${r.bitDepth}bit` : "";
+            setImgRes(`${r.width} × ${r.height}${depth}`);
+          })
+          .catch(() => {});
+      } else {
+        const img = new Image();
+        img.onload = () => !cancelled && setImgRes(`${img.naturalWidth} × ${img.naturalHeight}`);
+        img.onerror = () => {};
+        img.src = assetUrl(file.path);
+      }
       // EXIF 摘要 / 色彩空间(M2):读原文件字节解析,失败/无 EXIF → exif=null
       readExif(assetUrl(file.path))
         .then((e) => {

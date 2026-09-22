@@ -3,7 +3,7 @@ import {
   Maximize, Expand, Minimize2, ZoomIn, ZoomOut, FolderOpen, Copy, Ratio, Scan,
   ListOrdered, WrapText, ClipboardCopy, Eye, FileCode, Film, LayoutGrid, Table,
   RotateCcw, Orbit, Box, Boxes, Grid3x3, Lightbulb, FolderArchive, ChevronsUpDown, ChevronsDownUp,
-  Type, FileText, FileTerminal,
+  Type, FileText, FileTerminal, Globe,
 } from "lucide-react";
 import { useGridStore } from "../stores/gridStore";
 import { useCellViewStore } from "../stores/cellViewStore";
@@ -77,6 +77,9 @@ export function FunctionBar({
   const isGif = file?.ext === "gif";
   const isIco = file?.ext === "ico";
   const isSvg = file?.ext === "svg" || file?.ext === "svgz";
+  // 全景图(等距柱状 2:1,ImageView 载入后探测置 panoCapable):Globe 按钮切全景模式
+  const panoCapable = isImage && (view?.panoCapable ?? false);
+  const panoMode = panoCapable && (view?.panoMode ?? false);
   const isCsv = file?.ext === "csv" || file?.ext === "tsv";
   const isLottie = file?.sniffed === "lottie";
   // 双身份压缩容器(task2 §5):xlsx/xlsm/ods 本质是 zip → 功能条出"压缩包目录/表格"切换
@@ -154,7 +157,7 @@ export function FunctionBar({
               </select>
             </>
           )}
-          {isImage && !isIco && (
+          {isImage && !isIco && !panoMode && (
             <>
               <BarButton title="最佳显示(适应宫格)" active={fitMode === "best-fit"} onClick={() => ctl()?.setFitMode?.("best-fit")}>
                 <Ratio size={16} />
@@ -180,6 +183,44 @@ export function FunctionBar({
               </BarButton>
               <span className="w-10 text-[11px] tabular-nums text-text-dim">{Math.round(scale * 100)}%</span>
             </>
+          )}
+          {/* 全景模式:替换平面缩放组(缩放即 FOV,全景内无平移) */}
+          {isImage && panoMode && (
+            <>
+              <BarButton title="重置视角" onClick={() => ctl()?.panoReset?.()}>
+                <RotateCcw size={16} />
+              </BarButton>
+              <BarButton
+                title="自动旋转"
+                active={view?.panoAutoRotate ?? false}
+                onClick={() => ctl()?.togglePanoAutoRotate?.()}
+              >
+                <Orbit size={16} />
+              </BarButton>
+              <input
+                type="range"
+                className="h-1 w-20 accent-brand-bright"
+                min={0.05}
+                max={4}
+                step={0.01}
+                value={view?.panoExposure ?? 1}
+                onChange={(e) => ctl()?.setPanoExposure?.(Number(e.target.value))}
+                title={`曝光 ${(view?.panoExposure ?? 1).toFixed(2)}(HDR 源效果最明显)`}
+              />
+              <span className="w-9 text-[11px] tabular-nums text-text-dim">
+                {(view?.panoExposure ?? 1).toFixed(2)}
+              </span>
+            </>
+          )}
+          {/* 全景切换(等距柱状 2:1 探测到才有):平面 ↔ 球面环视 */}
+          {panoCapable && (
+            <BarButton
+              title={panoMode ? "切换到平面查看" : "全景图查看(等距柱状投影)"}
+              active={panoMode}
+              onClick={() => ctl()?.togglePanoMode?.()}
+            >
+              <Globe size={16} />
+            </BarButton>
           )}
           {/* svg:预览 / 文本源码 */}
           {isImage && isSvg && (

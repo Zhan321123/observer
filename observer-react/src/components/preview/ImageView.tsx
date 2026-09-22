@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from "react";
 import { assetUrl, readTextFile } from "../../lib/tauri";
 import { docPosGet, docPosSet } from "../../lib/persist";
 import { highlight } from "../../lib/highlight";
@@ -7,6 +7,12 @@ import { useCellViewStore, type FitMode } from "../../stores/cellViewStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { registerControl } from "../../stores/cellControls";
 import type { PreviewProps } from "../../formats/types";
+
+// 全景查看器(three 全量)代码分割:首次切全景模式才加载该 chunk(循 ThreeView 先例)
+const PanoramaViewLazy = lazy(() => import("./PanoramaView"));
+
+/** 等距柱状全景的宽高比判据(2:1,±5% 容差) */
+const isPanoAspect = (w: number, h: number) => w / h > 1.9 && w / h < 2.1;
 
 interface Tf {
   x: number;
@@ -32,6 +38,9 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
   const fitMode = useCellViewStore((s) => s.views[cellId]?.fitMode) as FitMode | undefined;
   const transparencyGrid = useCellViewStore((s) => s.views[cellId]?.transparencyGrid) ?? false;
   const svgMode = useCellViewStore((s) => s.views[cellId]?.svgMode) ?? "preview";
+  const panoCapable = useCellViewStore((s) => s.views[cellId]?.panoCapable) ?? false;
+  const panoMode = useCellViewStore((s) => s.views[cellId]?.panoMode) ?? false;
+  const panoActive = panoMode && panoCapable;
   const defaultFit = useSettingsStore((s) => s.imageDefaultFit);
   const imageScaleMode = useSettingsStore((s) => s.imageScaleMode);
   const setFullView = useCellViewStore((s) => s.setFullView);
@@ -283,6 +292,10 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
                 ? "text"
                 : "preview",
           }),
+        togglePanoMode: () =>
+          setView(cellId, {
+            panoMode: !(useCellViewStore.getState().views[cellId]?.panoMode ?? false),
+          }),
         enterFullView: () => setFullView(cellId),
         enterFullScreen: () => {
           setFullView(cellId);
@@ -293,6 +306,26 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
   );
 
   // 视图态清理由 gridStore 在文件变更/关格/缩容时处理;全界面切换不清理,位置得以保留
+  // 全景模式(宽高比≈2:1 探测为等距柱状全景,功能条 Globe 切换):交棒 PanoramaView(three 球面),
+  // 平面缩放/平移控件不渲染;decode-rust 格式的 LDR 回退纹理 = Rust 解码 PNG(overrideSrc)
+  if (panoActive) {
+    return (
+      <Suspense
+        fallback={
+          <div className="flex h-full w-full items-center justify-center text-xs text-text-dim">
+            加载全景查看器…
+          </div>
+        }
+      >
+        <PanoramaViewLazy
+          file={file}
+          cellId={cellId}
+          active={active}
+          fallbackSrc={overrideSrc ?? assetUrl(file.path)}
+        />
+      </Suspense>
+    );
+  }
   // svg 文本模式:显示高亮源码(不进 pan/zoom)
   if (showSvgText) {
     return (
@@ -327,7 +360,12 @@ export function ImageView({ file, cellId, active, overrideSrc }: PreviewProps) {
         onLoad={() => {
           setLoaded(true);
           const im = imgRef.current;
-          if (im && im.naturalWidth) setNat({ w: im.naturalWidth, h: im.naturalHeight });
+          if (im && im.naturalWidth) {
+            setNat({ w: im.naturalWidth, h: im.naturalHeight });
+            // 全景探测(等距柱状 2:1):decode-rust 的 PNG 保原宽高比,原生/解码统一在此判定;
+            // svg 矢量无固有全景含义,不探测
+            if (!isSvg) setView(cellId, { panoCapable: isPanoAspect(im.naturalWidth, im.naturalHeight) });
+          }
         }}
         onError={() => setView(cellId, { error: "无法加载图片(文件损坏或格式异常)" })}
         className="pointer-events-none absolute select-none"

@@ -62,6 +62,14 @@ export interface CellControl {
   setAudioDisplay?(m: "bars" | "wave" | "none"): void;
   /** SVG:预览/文本源码模式切换 */
   toggleSvgMode?(): void;
+  /** 图片:平面/全景模式切换(宽高比≈2:1 的等距柱状全景,ImageView 探测后置 panoCapable) */
+  togglePanoMode?(): void;
+  /** 全景:重置视角(回 lon/lat/fov 归位) */
+  panoReset?(): void;
+  /** 全景:自动旋转开关 */
+  togglePanoAutoRotate?(): void;
+  /** 全景:曝光设置(ACES 色调映射曝光,HDR 源效果最明显) */
+  setPanoExposure?(v: number): void;
   /** PDF:翻页 */
   pdfStep?(dir: 1 | -1): void;
   /** 3D:重置视角(回自适应取景) */

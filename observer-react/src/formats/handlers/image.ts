@@ -8,7 +8,8 @@ import { DecodedImageView } from "../../components/preview/DecodedImageView";
 // svgz(gzip 压缩的 SVG)Chromium 不能直读,由 ImageView 先 fetch+gunzip 再喂 blob(task2 一)。
 const NATIVE = ["png", "jpg", "jpeg", "webp", "svg", "bmp", "avif", "apng"];
 // M2 Rust 解码(image/psd crate → PNG;RAW 走 rawler、HEIC 走 heic crate)→ DecodedImageView。
-const DECODE_RUST = [
+// 文件信息框的分辨率读取也复用本清单:这些格式 WebView 不能直读,改走 image_info 读文件头。
+export const DECODE_RUST = [
   "tiff", "tif", "tga", "dds", "qoi", "hdr", "exr", "psd", "psb",
   // HEIC/HEIF(heic crate,纯 Rust HEVC)
   "heic", "heif",

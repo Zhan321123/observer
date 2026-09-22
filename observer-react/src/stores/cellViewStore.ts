@@ -76,6 +76,14 @@ export interface CellView {
   audioDisplay?: "bars" | "wave" | "none";
   /** SVG:预览/文本源码模式(默认 preview) */
   svgMode?: "preview" | "text";
+  /** 全景图(等距柱状投影,宽高比≈2:1):可进全景模式(ImageView 载入后按宽高比探测)/ 当前是否全景模式 */
+  panoCapable?: boolean;
+  panoMode?: boolean;
+  /** 全景:自动旋转 / 曝光(功能条显示 + PanoramaView 应用;持久化走 threed_camera) */
+  panoAutoRotate?: boolean;
+  panoExposure?: number;
+  /** 全景视角瞬态接力(全屏切换保留视角,循 threedCam 先例;path 标记归属文件) */
+  panoCam?: { path: string; lon: number; lat: number; fov: number };
   /** PDF:当前页(0 基)/ 总页数 / 缩放倍率(供功能条翻页与缩放) */
   pdfPage?: number;
   pdfPageCount?: number;
